@@ -4,6 +4,7 @@ import { useMusicKit } from './hooks/useMusicKit'
 import { useArtColors } from './hooks/useArtColors'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSyncAndPresence } from './hooks/useSyncAndPresence'
+import { useUpdateNotifier } from './hooks/useUpdateNotifier'
 import { usePlayer } from './store/player'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
@@ -40,6 +41,7 @@ function MainApp() {
   useKeyboardShortcuts()
   useSyncAndPresence({ isMiniPlayer: false })
   useRestoreLikes()
+  useUpdateNotifier()
   const fullScreen = useFullScreen()
 
   // Now Playing is an immersive takeover — no sidebar, no bottom bar, no

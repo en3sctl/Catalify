@@ -35,6 +35,14 @@ declare global {
         onMessage: (cb: (msg: any) => void) => () => void
       }
       onShortcut: (cb: (action: string) => void) => () => void
+      updater: {
+        installNow: () => void
+        checkNow: () => Promise<{ ok: boolean; version?: string | null; error?: string }>
+        onUpdateAvailable: (cb: (info: { version: string | null }) => void) => () => void
+        onDownloadProgress: (cb: (info: { percent: number; transferred: number; total: number }) => void) => () => void
+        onUpdateDownloaded: (cb: (info: { version: string | null }) => void) => () => void
+        onError: (cb: (info: { message: string }) => void) => () => void
+      }
     }
     MusicKit: any
   }

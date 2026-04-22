@@ -14,11 +14,13 @@
     "prepare-icons": "node scripts/build-app-icon.js",
     "patch-dev-icon": "node scripts/patch-dev-icon.js",
     "build": "vite build",
-    "package": "npm run prepare-icons && vite build && electron-builder"
+    "package": "npm run prepare-icons && vite build && electron-builder",
+    "release": "npm run prepare-icons && vite build && dotenv -e .env -- electron-builder --publish always"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "framer-motion": "^11.3.8",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.408.0",
@@ -38,6 +40,7 @@
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
+    "dotenv-cli": "^11.0.0",
     "electron": "https://github.com/castlabs/electron-releases#v41.1.1+wvcus",
     "electron-builder": "^24.13.3",
     "png-to-ico": "^3.0.1",
@@ -60,16 +63,7 @@
       "assets/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env"
-      },
-      {
-        "from": "AuthKey_BQJDU99MSG.p8",
-        "to": "AuthKey_BQJDU99MSG.p8"
-      }
-    ],
+    "extraResources": [],
     "win": {
       "target": "nsis",
       "icon": "assets/cat-icon.ico"
@@ -81,6 +75,14 @@
       "uninstallerIcon": "assets/cat-icon.ico",
       "installerHeaderIcon": "assets/cat-icon.ico",
       "artifactName": "Catalify-Setup-${version}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "en3sctl",
+        "repo": "Catalify",
+        "releaseType": "release"
+      }
+    ]
   }
 }
