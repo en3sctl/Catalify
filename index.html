@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self' app:;
+      script-src 'self' 'unsafe-inline' https://js-cdn.music.apple.com app:;
+      connect-src 'self' https://*.apple.com https://*.mzstatic.com https://api.music.apple.com https://lrclib.net wss: ws: app:;
+      media-src 'self' https://*.apple.com https://*.mzstatic.com blob: app:;
+      img-src 'self' https://*.mzstatic.com https://*.apple.com data: blob: app:;
+      font-src 'self' https://fonts.gstatic.com data: app:;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com app:;
+    " />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Çatalify</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap" />
+  </head>
+  <body class="bg-obsidian-950 text-obsidian-100 antialiased overflow-hidden">
+    <!--
+      Surgically silence only the specific benign race: rapid play/pause
+      cycling inside MusicKit JS triggers an AbortError + alert dialog. Real
+      errors (DRM, auth, network) must still surface so we can see them.
+    -->
+    <script>
+      (function () {
+        var BENIGN = /play\(\) request was interrupted by/i
+        function isBenign(err) {
+          var msg = (err && (err.message || err.name)) || String(err || '')
+          return BENIGN.test(msg)
+        }
+        window.alert = function () { try { console.warn('[alert blocked]', arguments[0]) } catch (e) {} }
+        window.confirm = function () { return true }
+        window.prompt = function () { return null }
+        window.addEventListener('unhandledrejection', function (e) {
+          if (isBenign(e.reason)) { e.preventDefault() }
+        }, true)
+        window.addEventListener('error', function (e) {
+          if (isBenign(e.error || e.message)) { e.preventDefault() }
+        }, true)
+        // Block any third-party <dialog> elements from stealing focus; ours
+        // are tagged with data-bombo. Only shown dialogs are affected, not
+        // mere insertion into the DOM.
+        if (window.HTMLDialogElement) {
+          var origShow = HTMLDialogElement.prototype.showModal
+          var origShowRegular = HTMLDialogElement.prototype.show
+          HTMLDialogElement.prototype.showModal = function () {
+            if (this.hasAttribute && this.hasAttribute('data-bombo')) {
+              return origShow.apply(this, arguments)
+            }
+          }
+          HTMLDialogElement.prototype.show = function () {
+            if (this.hasAttribute && this.hasAttribute('data-bombo')) {
+              return origShowRegular.apply(this, arguments)
+            }
+          }
+        }
+      })()
+    </script>
+    <div id="root"></div>
+    <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"></script>
+    <script type="module" src="/src/renderer/main.tsx"></script>
+  </body>
+</html>

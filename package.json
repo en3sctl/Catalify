@@ -1,0 +1,86 @@
+{
+  "name": "catalify",
+  "version": "0.1.0",
+  "description": "A personal, minimal Apple Music player — Çatalify",
+  "author": "Enes",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "dist-electron/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && node scripts/run-electron.js .",
+    "prepare-icons": "node scripts/build-app-icon.js",
+    "patch-dev-icon": "node scripts/patch-dev-icon.js",
+    "build": "vite build",
+    "package": "npm run prepare-icons && vite build && electron-builder"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "electron-store": "^8.2.0",
+    "framer-motion": "^11.3.8",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.408.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.24.1",
+    "zustand": "^4.5.4"
+  },
+  "optionalDependencies": {
+    "discord-rpc": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "https://github.com/castlabs/electron-releases#v41.1.1+wvcus",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^3.0.1",
+    "postcss": "^8.4.39",
+    "rcedit": "^5.0.2",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.enes.catalify",
+    "productName": "Çatalify",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      },
+      {
+        "from": "AuthKey_BQJDU99MSG.p8",
+        "to": "AuthKey_BQJDU99MSG.p8"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/cat-icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/cat-icon.ico",
+      "uninstallerIcon": "assets/cat-icon.ico",
+      "installerHeaderIcon": "assets/cat-icon.ico",
+      "artifactName": "Catalify-Setup-${version}.${ext}"
+    }
+  }
+}

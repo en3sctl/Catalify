@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(git ls-remote *)",
+      "Bash(awk '{print $2}')",
+      "Bash(grep 'v38.8.6+wvcus$\\\\|v39.8.6+wvcus$')",
+      "Bash(npm run *)",
+      "WebFetch(domain:enescatal.com)"
+    ]
+  }
+}

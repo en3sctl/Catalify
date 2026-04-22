@@ -1,0 +1,14 @@
+C:\Users\enes\AppData\Roaming\bombomusic\Local Storage\leveldb\000003.log
+C:\Users\enes\AppData\Roaming\bombomusic\Local Storage\leveldb\CURRENT
+C:\Users\enes\AppData\Roaming\bombomusic\Local Storage\leveldb\LOCK
+C:\Users\enes\AppData\Roaming\bombomusic\Local Storage\leveldb\LOG
+C:\Users\enes\AppData\Roaming\bombomusic\Local Storage\leveldb\LOG.old
+C:\Users\enes\AppData\Roaming\bombomusic\Local Storage\leveldb\MANIFEST-000001
+C:\Users\enes\AppData\Roaming\bombomusic\Network\Cookies
+C:\Users\enes\AppData\Roaming\BomboMusic\Local Storage\leveldb\000003.log
+C:\Users\enes\AppData\Roaming\BomboMusic\Local Storage\leveldb\CURRENT
+C:\Users\enes\AppData\Roaming\BomboMusic\Local Storage\leveldb\LOCK
+C:\Users\enes\AppData\Roaming\BomboMusic\Local Storage\leveldb\LOG
+C:\Users\enes\AppData\Roaming\BomboMusic\Local Storage\leveldb\LOG.old
+C:\Users\enes\AppData\Roaming\BomboMusic\Local Storage\leveldb\MANIFEST-000001
+C:\Users\enes\AppData\Roaming\BomboMusic\Network\Cookies

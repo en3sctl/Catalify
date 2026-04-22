@@ -1,0 +1,33 @@
+# Secrets — NEVER commit these
+*.p8
+.env
+.env.local
+secrets/
+AuthKey_*.p8
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+release/
+out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Electron
+app.asar
+
+# Misc
+coverage/
+.cache/
