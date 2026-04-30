@@ -194,6 +194,37 @@ export async function getPlaylist(id: string) {
   return res.data.data[0]
 }
 
+/**
+ * Apple Music library item IDs follow conventions distinct from catalog IDs:
+ *   - Library playlists: "p.xxxxxxxx" or "pl.u-xxxxxxxx" (user-created)
+ *   - Library albums:    "l.xxxxxxxx"
+ *   - Library songs:     "i.xxxxxxxx"
+ *   - Catalog items:     numeric IDs ("1234567890") or "pl.<editorial>"
+ *
+ * The `/v1/catalog/...` endpoints 404 on library IDs, so detection is the
+ * cheapest way to route to the right endpoint without a try/retry.
+ */
+export function isLibraryId(id: string): boolean {
+  if (!id) return false
+  return /^[ipl]\./i.test(id) || /^pl\.u-/i.test(id)
+}
+
+export async function getLibraryPlaylist(id: string) {
+  const mk = getMusicKit()
+  const res = await mk.api.music(`/v1/me/library/playlists/${id}`, {
+    include: 'tracks',
+  })
+  return res.data.data[0]
+}
+
+export async function getLibraryAlbum(id: string) {
+  const mk = getMusicKit()
+  const res = await mk.api.music(`/v1/me/library/albums/${id}`, {
+    include: 'tracks,artists',
+  })
+  return res.data.data[0]
+}
+
 export async function getArtist(id: string) {
   const mk = getMusicKit()
   const sf = await storefront()
@@ -802,6 +833,48 @@ export async function playAlbum(albumId: string, startAt = 0) {
     console.error('[playAlbum] failed to resolve track IDs', err)
     toast.error('Playback failed', 'Could not load this album right now.')
   }
+}
+
+/**
+ * Library-side playback. Library playlist/album responses carry tracks
+ * whose `i.xxx` library IDs MusicKit JS cannot stream directly — but
+ * each track's `attributes.playParams.catalogId` points to the streamable
+ * catalog version. We pull catalog IDs and delegate to playSongs.
+ */
+async function playLibraryCollection(
+  loader: () => Promise<any>,
+  startAt = 0,
+  label: string,
+) {
+  try {
+    const item = await loader()
+    const tracks = item?.relationships?.tracks?.data ?? []
+    const trackIds: string[] = tracks
+      .map((t: any) => String(t?.attributes?.playParams?.catalogId ?? ''))
+      .filter(Boolean)
+    const artistMap: Record<string, string> = {}
+    for (const t of tracks) {
+      const tid = String(t?.attributes?.playParams?.catalogId ?? '')
+      const name = t?.attributes?.artistName
+      if (tid && typeof name === 'string') artistMap[tid] = name
+    }
+    if (trackIds.length === 0) {
+      toast.error('Playback failed', `No streamable tracks in this ${label}.`)
+      return
+    }
+    await playSongs(trackIds, startAt, artistMap)
+  } catch (err) {
+    console.error(`[playLibrary${label}] failed`, err)
+    toast.error('Playback failed', `Could not load this ${label} right now.`)
+  }
+}
+
+export async function playLibraryPlaylist(id: string, startAt = 0) {
+  await playLibraryCollection(() => getLibraryPlaylist(id), startAt, 'playlist')
+}
+
+export async function playLibraryAlbum(id: string, startAt = 0) {
+  await playLibraryCollection(() => getLibraryAlbum(id), startAt, 'album')
 }
 
 export async function playPlaylist(playlistId: string, startAt = 0) {

@@ -24,7 +24,7 @@ declare global {
         close: () => void
       }
       thumbar: {
-        update: (payload: { isPlaying: boolean; hasTrack: boolean }) => void
+        update: (payload: { isPlaying: boolean; hasTrack: boolean; icons?: any }) => void
       }
       discord: {
         update: (payload: any) => void

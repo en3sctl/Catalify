@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Play, Shuffle } from 'lucide-react'
-import { getPlaylist, playPlaylist } from '../utils/musickit-api'
+import {
+  getLibraryPlaylist,
+  getPlaylist,
+  isLibraryId,
+  playLibraryPlaylist,
+  playPlaylist,
+} from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl } from '../utils/format'
@@ -11,23 +17,33 @@ export function Playlist() {
   const { id } = useParams<{ id: string }>()
   const [playlist, setPlaylist] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+
+  // Library playlists (user-created, "p.xxx" / "pl.u-xxx") only resolve
+  // through the library endpoint — the catalog endpoint 404s on them.
+  const isLibrary = id ? isLibraryId(id) : false
 
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    getPlaylist(id)
+    const fetcher = isLibrary ? getLibraryPlaylist : getPlaylist
+    fetcher(id)
       .then(setPlaylist)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id, isLibrary])
 
   const tracks = useMemo(() => playlist?.relationships?.tracks?.data ?? [], [playlist])
   const attrs = playlist?.attributes ?? {}
   const artLarge = artworkUrl(attrs.artwork?.url, 600)
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
 
   if (loading) return <div className="text-obsidian-400">Loading…</div>
   if (!playlist) return <div className="text-obsidian-400">Playlist not found.</div>
+
+  const playFromHere = (startAt = 0) =>
+    isLibrary
+      ? playLibraryPlaylist(playlist.id, startAt)
+      : playPlaylist(playlist.id, startAt)
 
   return (
     <div className="space-y-6 pb-10">
@@ -42,7 +58,7 @@ export function Playlist() {
           <div className="mt-2 text-obsidian-400 text-sm">{tracks.length} songs · {attrs.curatorName ?? ''}</div>
           <div className="mt-4 flex gap-3">
             <button
-              onClick={() => playPlaylist(playlist.id).catch(console.error)}
+              onClick={() => playFromHere(0).catch(console.error)}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full accent-bg text-obsidian-950 font-semibold hover:brightness-110 transition shadow-glow"
             >
               <Play size={16} fill="currentColor" /> Play
@@ -51,7 +67,7 @@ export function Playlist() {
               onClick={async () => {
                 toggleShuffle()
                 try {
-                  await playPlaylist(playlist.id)
+                  await playFromHere(0)
                 } catch (e) { console.error(e) }
               }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-white hover:bg-white/[0.1] transition"
@@ -68,7 +84,7 @@ export function Playlist() {
             key={t.id + i}
             index={i}
             track={t}
-            onPlay={() => playPlaylist(playlist.id, i).catch(console.error)}
+            onPlay={() => playFromHere(i).catch(console.error)}
           />
         ))}
       </div>

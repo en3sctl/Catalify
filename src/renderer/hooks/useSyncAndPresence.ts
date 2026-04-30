@@ -6,11 +6,18 @@ type PlayerSnap = ReturnType<typeof usePlayer.getState>
 
 function pushState(s: PlayerSnap) {
   if (s.nowPlaying) {
+    // Resolve a public Apple Music URL for the "Listen on Apple Music"
+    // button. Falls back to 'us' if MusicKit hasn't surfaced a
+    // storefront yet (rare — would require pre-auth track playback).
+    const sf =
+      (window as any).MusicKit?.getInstance?.()?.storefrontId || 'us'
+    const appleMusicUrl = `https://music.apple.com/${sf}/song/${s.nowPlaying.id}`
     window.bombo.discord.update({
       title: s.nowPlaying.title,
       artist: s.nowPlaying.artistName,
       album: s.nowPlaying.albumName,
       artworkUrl: s.nowPlaying.artworkUrl,
+      appleMusicUrl,
       durationMs: s.durationMs,
       progressMs: s.progressMs,
       isPlaying: s.isPlaying,

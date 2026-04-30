@@ -17,20 +17,26 @@ export function Library() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
-    try {
-      const [p, a, s] = await Promise.all([
-        getLibraryPlaylists(100),
-        getLibraryAlbums(100),
-        getLibrarySongs(200),
-      ])
-      setPlaylists(p ?? [])
-      setAlbums(a ?? [])
-      setSongs(s ?? [])
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
+    // allSettled — Apple Music's per-endpoint failures shouldn't blank
+    // the whole library. Songs sometimes 403s in regions where Albums
+    // and Playlists succeed; before this, that one rejection caused all
+    // three lists to stay empty (Promise.all short-circuits on reject).
+    const results = await Promise.allSettled([
+      getLibraryPlaylists(100),
+      getLibraryAlbums(100),
+      getLibrarySongs(200),
+    ])
+    const get = <T,>(i: number, fallback: T): T =>
+      results[i].status === 'fulfilled'
+        ? ((results[i] as PromiseFulfilledResult<T>).value ?? fallback)
+        : fallback
+    for (const r of results) {
+      if (r.status === 'rejected') console.warn('[library] fetch failed', r.reason)
     }
+    setPlaylists(get<any[]>(0, []))
+    setAlbums(get<any[]>(1, []))
+    setSongs(get<any[]>(2, []))
+    setLoading(false)
   }, [])
 
   useEffect(() => { refresh() }, [refresh])

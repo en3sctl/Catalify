@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Play, Shuffle } from 'lucide-react'
-import { getAlbum, playAlbum } from '../utils/musickit-api'
+import {
+  getAlbum,
+  getLibraryAlbum,
+  isLibraryId,
+  playAlbum,
+  playLibraryAlbum,
+} from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl } from '../utils/format'
@@ -11,15 +17,17 @@ export function Album() {
   const { id } = useParams<{ id: string }>()
   const [album, setAlbum] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const isLibrary = id ? isLibraryId(id) : false
 
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    getAlbum(id)
+    const fetcher = isLibrary ? getLibraryAlbum : getAlbum
+    fetcher(id)
       .then(setAlbum)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id, isLibrary])
 
   const tracks = useMemo(() => album?.relationships?.tracks?.data ?? [], [album])
   const attrs = album?.attributes ?? {}
@@ -39,6 +47,11 @@ export function Album() {
   if (!album) {
     return <div className="text-obsidian-400">Album not found.</div>
   }
+
+  const playFromHere = (startAt = 0) =>
+    isLibrary
+      ? playLibraryAlbum(album.id, startAt)
+      : playAlbum(album.id, startAt)
 
   return (
     <div className="space-y-6 pb-10">
@@ -63,7 +76,7 @@ export function Album() {
           </div>
           <div className="mt-4 flex gap-3">
             <button
-              onClick={() => playAlbum(album.id).catch(console.error)}
+              onClick={() => playFromHere(0).catch(console.error)}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full accent-bg text-obsidian-950 font-semibold hover:brightness-110 transition shadow-glow"
             >
               <Play size={16} fill="currentColor" /> Play
@@ -72,7 +85,7 @@ export function Album() {
               onClick={async () => {
                 toggleShuffle()
                 try {
-                  await playAlbum(album.id)
+                  await playFromHere(0)
                 } catch (e) { console.error(e) }
               }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-white hover:bg-white/[0.1] transition"
@@ -91,7 +104,7 @@ export function Album() {
             track={t}
             showArt={false}
             showAlbum={false}
-            onPlay={() => playAlbum(album.id, i).catch(console.error)}
+            onPlay={() => playFromHere(i).catch(console.error)}
           />
         ))}
       </div>

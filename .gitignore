@@ -28,6 +28,9 @@ Thumbs.db
 # Electron
 app.asar
 
+# Cloudflare Worker (separate project — Apple .p8 lives here, do not track)
+catalify-token/
+
 # Misc
 coverage/
 .cache/

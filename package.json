@@ -16,7 +16,10 @@
     "build": "vite build",
     "clean": "node -e \"require('fs').rmSync('release', {recursive:true, force:true})\"",
     "package": "npm run clean && npm run prepare-icons && vite build && electron-builder",
-    "release": "npm run clean && npm run prepare-icons && vite build && dotenv -e .env -- electron-builder --publish always"
+    "release": "npm run clean && npm run prepare-icons && vite build && dotenv -e .env -- electron-builder --publish always",
+    "release:patch": "npm version patch -m \"chore: release v%s\" && npm run release && git push --follow-tags",
+    "release:minor": "npm version minor -m \"chore: release v%s\" && npm run release && git push --follow-tags",
+    "release:major": "npm version major -m \"chore: release v%s\" && npm run release && git push --follow-tags"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -66,17 +69,7 @@
       "assets/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env",
-        "filter": ["**/*"]
-      },
-      {
-        "from": "AuthKey_R49V439H33.p8",
-        "to": "AuthKey_R49V439H33.p8"
-      }
-    ],
+    "extraResources": [],
     "win": {
       "target": "nsis",
       "icon": "assets/cat-icon.ico"
