@@ -5,6 +5,9 @@ export interface NowPlayingItem {
   id: string
   title: string
   artistName: string
+  /** Apple catalog artist id, if MusicKit surfaced one — drives the
+   *  "tap artist name to open profile" links in the bar / full player. */
+  artistId?: string
   albumName: string
   artworkUrl?: string
   durationMs: number

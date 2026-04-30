@@ -9,6 +9,7 @@ import { usePlayer } from './store/player'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { NowPlayingBar } from './components/NowPlayingBar'
+import { BackdropAura } from './components/BackdropAura'
 import { LoginGate } from './components/LoginGate'
 import { Home } from './pages/Home'
 import { Search } from './pages/Search'
@@ -60,7 +61,8 @@ function MainApp() {
           smoothly into the big hero cover (Spotify-style expand), instead
           of a snap cut. */}
       <LayoutGroup>
-        <div className="noise w-screen h-screen bg-obsidian-950 text-obsidian-100 overflow-hidden">
+        <div className="noise w-screen h-screen text-obsidian-100 overflow-hidden">
+          <BackdropAura />
           {!hideChrome && <TitleBar />}
           {!immersive && <Sidebar />}
           <main

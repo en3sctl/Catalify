@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   ChevronDown,
   Play,
@@ -274,7 +274,16 @@ export function NowPlaying() {
                 transition: 'font-size 420ms cubic-bezier(0.16, 1, 0.3, 1)',
               }}
             >
-              {np.artistName}
+              {np.artistId ? (
+                <Link
+                  to={`/artist/${np.artistId}`}
+                  className="hover:text-white hover:underline"
+                >
+                  {np.artistName}
+                </Link>
+              ) : (
+                np.artistName
+              )}
             </div>
             {np.albumName && !lyricsOpen && (
               <div className="mt-0.5 text-white/40 text-[13px] selectable truncate">

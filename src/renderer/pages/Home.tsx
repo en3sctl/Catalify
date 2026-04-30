@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -11,11 +11,13 @@ import {
   Search as SearchIcon,
   Clock,
   X,
+  RefreshCw,
 } from 'lucide-react'
 import {
+  getCharts,
   getHeavyRotation,
   getRecentlyPlayed,
-  getRecommendations,
+  getRotatingRecommendations,
   getLibraryPlaylists,
   getLibraryRecentlyAdded,
   getLibrarySongs,
@@ -36,6 +38,9 @@ interface HomeData {
   playlists: any[]
   recentlyAdded: any[]
   librarySongs: any[]
+  chartSongs: any[]
+  chartAlbums: any[]
+  chartPlaylists: any[]
 }
 
 const EMPTY: HomeData = {
@@ -45,40 +50,89 @@ const EMPTY: HomeData = {
   playlists: [],
   recentlyAdded: [],
   librarySongs: [],
+  chartSongs: [],
+  chartAlbums: [],
+  chartPlaylists: [],
 }
+
+// 30 minutes — mirrors Apple Music's web client cadence. Charts move
+// throughout the day, recommendations rotate slower; both are cheap.
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000
 
 export function Home() {
   const [data, setData] = useState<HomeData>(EMPTY)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastLoadedAt, setLastLoadedAt] = useState<number>(0)
+
+  const loadAll = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    if (mode === 'refresh') setRefreshing(true)
+    const results = await Promise.allSettled([
+      getRecentlyPlayed(20),
+      getHeavyRotation(12),
+      getRotatingRecommendations(12),
+      getLibraryPlaylists(12),
+      getLibraryRecentlyAdded(12),
+      getLibrarySongs(30),
+      getCharts(['songs', 'albums', 'playlists'], 20),
+    ])
+    const get = <T,>(i: number, fallback: T): T =>
+      results[i].status === 'fulfilled' ? ((results[i] as any).value ?? fallback) : fallback
+    const charts = get(6, { songs: [], albums: [], playlists: [] }) as {
+      songs: any[]
+      albums: any[]
+      playlists: any[]
+    }
+    setData({
+      recent: get(0, []),
+      rotation: get(1, []),
+      recommendations: get(2, []),
+      playlists: get(3, []),
+      recentlyAdded: get(4, []),
+      librarySongs: get(5, []),
+      chartSongs: charts.songs,
+      chartAlbums: charts.albums,
+      chartPlaylists: charts.playlists,
+    })
+    setLastLoadedAt(Date.now())
+    if (mode === 'initial') setLoading(false)
+    if (mode === 'refresh') setRefreshing(false)
+  }, [])
 
   useEffect(() => {
-    ;(async () => {
-      const results = await Promise.allSettled([
-        getRecentlyPlayed(20),
-        getHeavyRotation(12),
-        getRecommendations(8),
-        getLibraryPlaylists(12),
-        getLibraryRecentlyAdded(12),
-        getLibrarySongs(30),
-      ])
-      const get = <T,>(i: number, fallback: T): T =>
-        results[i].status === 'fulfilled' ? ((results[i] as any).value ?? fallback) : fallback
-      setData({
-        recent: get(0, []),
-        rotation: get(1, []),
-        recommendations: get(2, []),
-        playlists: get(3, []),
-        recentlyAdded: get(4, []),
-        librarySongs: get(5, []),
-      })
-      setLoading(false)
-    })()
-  }, [])
+    loadAll('initial').catch(console.error)
+  }, [loadAll])
+
+  // Auto-refresh: when the user comes back to the app (or unhides the
+  // tab) after a long enough gap, pull fresh charts/recommendations.
+  // Also a coarse 30-minute fallback while the app stays open.
+  useEffect(() => {
+    const maybeRefresh = () => {
+      if (Date.now() - lastLoadedAt > REFRESH_INTERVAL_MS) {
+        loadAll('refresh').catch(console.error)
+      }
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') maybeRefresh()
+    }
+    window.addEventListener('focus', maybeRefresh)
+    document.addEventListener('visibilitychange', onVisibility)
+    const id = window.setInterval(maybeRefresh, 5 * 60 * 1000)
+    return () => {
+      window.removeEventListener('focus', maybeRefresh)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.clearInterval(id)
+    }
+  }, [lastLoadedAt, loadAll])
 
   return (
     <div className="space-y-10 pb-16">
       <HomeSearchBar />
-      <Hero featured={data.recent[0]} />
+      <Hero
+        featured={data.recent[0]}
+        onRefresh={() => loadAll('refresh')}
+        refreshing={refreshing}
+      />
 
       <QuickShortcuts />
 
@@ -97,6 +151,46 @@ export function Home() {
                 onPlay={() => playItem(item)}
               />
             ))}
+        </Rail>
+      )}
+
+      {data.chartSongs.length > 0 && (
+        <section>
+          <SectionHeader
+            title="Top 100 right now"
+            subtitle="What's charting on Apple Music today"
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            {data.chartSongs.slice(0, 10).map((s, i) => (
+              <TrackRow
+                key={s.id}
+                index={i}
+                track={s}
+                onPlay={() =>
+                  playSongs(
+                    data.chartSongs.map((x: any) => x.id),
+                    i,
+                  ).catch(console.error)
+                }
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.chartAlbums.length > 0 && (
+        <Rail
+          title="Trending albums"
+          subtitle="Most-played in your storefront"
+          widthClass="w-48"
+        >
+          {data.chartAlbums.slice(0, 14).map((item) => (
+            <MediaCard
+              key={item.id + (item.type ?? '')}
+              item={item}
+              onPlay={() => playItem(item)}
+            />
+          ))}
         </Rail>
       )}
 
@@ -134,6 +228,22 @@ export function Home() {
       {data.recent.length > 0 && (
         <Rail title="Recently played" subtitle="Jump right back in" widthClass="w-48">
           {data.recent.slice(0, 12).map((item) => (
+            <MediaCard
+              key={item.id + (item.type ?? '')}
+              item={item}
+              onPlay={() => playItem(item)}
+            />
+          ))}
+        </Rail>
+      )}
+
+      {data.chartPlaylists.length > 0 && (
+        <Rail
+          title="Editor's picks"
+          subtitle="Featured playlists right now"
+          widthClass="w-48"
+        >
+          {data.chartPlaylists.slice(0, 14).map((item) => (
             <MediaCard
               key={item.id + (item.type ?? '')}
               item={item}
@@ -328,7 +438,15 @@ function SectionHeader({
 
 /* ── Hero ────────────────────────────────────────────────────── */
 
-function Hero({ featured }: { featured?: any }) {
+function Hero({
+  featured,
+  onRefresh,
+  refreshing,
+}: {
+  featured?: any
+  onRefresh: () => void
+  refreshing: boolean
+}) {
   const nowPlaying = usePlayer((s) => s.nowPlaying)
   const isPlaying = usePlayer((s) => s.isPlaying)
 
@@ -356,41 +474,28 @@ function Hero({ featured }: { featured?: any }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      className="relative overflow-hidden rounded-[28px] border border-white/[0.06] h-[300px] md:h-[340px]"
+      className="relative overflow-hidden rounded-[28px] h-[300px] md:h-[340px] liquid-glass-strong"
     >
-      {/* Blurred artwork backdrop — the only decorative noise we allow on
-          home. No rain, no halos, just ambient colour from the art. */}
-      {heroItem?.artworkUrl ? (
-        <img
-          src={heroItem.artworkUrl}
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{
-            transform: 'scale(1.15)',
-            filter: 'blur(40px) saturate(150%)',
-            opacity: 0.55,
-          }}
-        />
-      ) : (
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(900px 400px at 70% 30%, rgb(var(--accent) / 0.22), transparent 70%), linear-gradient(135deg, #140e22 0%, #07050c 100%)',
-          }}
-        />
-      )}
+      {/* Subtle accent wash on top of the page-wide BackdropAura — keeps
+          the hero feeling like its own surface without re-blurring the art. */}
       <div
         aria-hidden
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(90deg, rgba(10,8,18,0.82) 0%, rgba(10,8,18,0.55) 55%, rgba(10,8,18,0.15) 100%), linear-gradient(180deg, rgba(10,8,18,0) 0%, rgba(10,8,18,0.6) 100%)',
+            'radial-gradient(700px 320px at 80% 20%, rgb(var(--accent) / 0.18), transparent 70%), linear-gradient(180deg, rgba(10,8,18,0) 40%, rgba(10,8,18,0.35) 100%)',
         }}
       />
+
+      {/* Refresh — pulls fresh charts/recommendations on demand */}
+      <button
+        onClick={onRefresh}
+        disabled={refreshing}
+        title="Refresh recommendations"
+        className="absolute top-5 right-5 z-[2] w-9 h-9 rounded-full flex items-center justify-center text-white/70 hover:text-white bg-white/[0.05] hover:bg-white/[0.12] backdrop-blur-xl border border-white/[0.08] transition disabled:opacity-50"
+      >
+        <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+      </button>
 
       {/* Content */}
       <div className="relative h-full z-[1] flex items-center justify-between gap-8 p-8 md:p-12">

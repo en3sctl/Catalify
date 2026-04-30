@@ -26,6 +26,14 @@ export function MediaCard({ item, onPlay, roundedArtwork = false, size = 'md' }:
   const title = attrs.name
   const subtitle = attrs.artistName ?? attrs.curatorName ?? attrs.editorialNotes?.standard ?? ''
   const to = routeFor(item)
+  // Catalog responses sometimes carry the artist id at relationships.artists.data[0]
+  // — use it to make the subtitle a profile link.
+  const artistId =
+    item.relationships?.artists?.data?.[0]?.id ||
+    item.relationships?.artist?.data?.[0]?.id ||
+    (typeof attrs.artistUrl === 'string'
+      ? attrs.artistUrl.match(/\/artist\/[^/]+\/(\d+)/)?.[1]
+      : undefined)
 
   return (
     <Link
@@ -62,7 +70,19 @@ export function MediaCard({ item, onPlay, roundedArtwork = false, size = 'md' }:
         {title}
       </div>
       {subtitle && (
-        <div className="truncate text-[12px] text-obsidian-300 mt-0.5">{subtitle}</div>
+        <div className="truncate text-[12px] text-obsidian-300 mt-0.5">
+          {artistId && attrs.artistName ? (
+            <Link
+              to={`/artist/${artistId}`}
+              className="hover:text-cream hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {subtitle}
+            </Link>
+          ) : (
+            subtitle
+          )}
+        </div>
       )}
     </Link>
   )

@@ -44,8 +44,25 @@ export function trackContextItems(
 ): ContextMenuItem[] {
   const attrs = track?.attributes ?? {}
   const catalogId: string = attrs.playParams?.catalogId || track?.id || ''
-  const albumId: string | undefined = attrs.playParams?.albumId || attrs.albumId
-  const artistId: string | undefined = attrs.artistId
+  // Apple Music returns these IDs in several different shapes depending on
+  // whether the track came from the catalog, charts, library, or search.
+  // Try every known location before giving up — otherwise "Go to album"
+  // and "Go to artist" stay disabled even when the data is right there.
+  const albumId: string | undefined =
+    track?.relationships?.albums?.data?.[0]?.id ||
+    track?.relationships?.album?.data?.[0]?.id ||
+    attrs.playParams?.albumId ||
+    attrs.albumId ||
+    (typeof attrs.url === 'string'
+      ? attrs.url.match(/\/album\/[^/]+\/(\d+)/)?.[1]
+      : undefined)
+  const artistId: string | undefined =
+    track?.relationships?.artists?.data?.[0]?.id ||
+    track?.relationships?.artist?.data?.[0]?.id ||
+    attrs.artistId ||
+    (typeof attrs.artistUrl === 'string'
+      ? attrs.artistUrl.match(/\/artist\/[^/]+\/(\d+)/)?.[1]
+      : undefined)
   const likedIds = usePlayer.getState().likedIds
   const liked = !!likedIds[catalogId]
 

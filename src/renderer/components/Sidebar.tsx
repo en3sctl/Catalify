@@ -16,7 +16,13 @@ export function Sidebar() {
   const isReady = usePlayer((s) => s.isReady)
 
   return (
-    <aside className="fixed top-[var(--titlebar-h)] left-0 bottom-[var(--nowplaying-h)] w-[var(--sidebar-w)] p-3 flex flex-col gap-1 z-30 border-r border-white/[0.04] bg-[rgba(10,8,18,0.72)] backdrop-blur-xl">
+    <aside
+      className="fixed top-[var(--titlebar-h)] left-0 bottom-[var(--nowplaying-h)] w-[var(--sidebar-w)] p-3 flex flex-col gap-1 z-30 border-r border-white/[0.04] backdrop-blur-2xl backdrop-saturate-150"
+      style={{
+        background:
+          'linear-gradient(180deg, rgb(var(--accent) / 0.06) 0%, rgba(10,8,18,0.18) 60%, rgba(10,8,18,0.28) 100%)',
+      }}
+    >
       <nav className="flex flex-col gap-1 mt-2">
         {items.map(({ to, label, icon: Icon }) => (
           <NavLink

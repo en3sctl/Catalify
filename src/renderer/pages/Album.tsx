@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { Play, Shuffle } from 'lucide-react'
 import { getAlbum, playAlbum } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
@@ -24,6 +24,11 @@ export function Album() {
   const tracks = useMemo(() => album?.relationships?.tracks?.data ?? [], [album])
   const attrs = album?.attributes ?? {}
   const artLarge = artworkUrl(attrs.artwork?.url, 600)
+  const artistId =
+    album?.relationships?.artists?.data?.[0]?.id ||
+    (typeof attrs.artistUrl === 'string'
+      ? attrs.artistUrl.match(/\/artist\/[^/]+\/(\d+)/)?.[1]
+      : undefined)
 
   const toggleShuffle = usePlayer((s) => s.toggleShuffle)
   const shuffle = usePlayer((s) => s.shuffle)
@@ -43,7 +48,18 @@ export function Album() {
           <div className="text-[12px] uppercase tracking-widest text-obsidian-300">{attrs.recordLabel ? 'Album' : 'Album'}</div>
           <h1 className="mt-1 text-4xl md:text-5xl font-display font-semibold leading-tight">{attrs.name}</h1>
           <div className="mt-2 text-obsidian-300">
-            {attrs.artistName} · {attrs.releaseDate?.slice(0, 4)} · {tracks.length} songs
+            {artistId ? (
+              <Link
+                to={`/artist/${artistId}`}
+                className="hover:text-cream hover:underline"
+              >
+                {attrs.artistName}
+              </Link>
+            ) : (
+              attrs.artistName
+            )}
+            {' · '}
+            {attrs.releaseDate?.slice(0, 4)} · {tracks.length} songs
           </div>
           <div className="mt-4 flex gap-3">
             <button

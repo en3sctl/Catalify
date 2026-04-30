@@ -46,7 +46,13 @@ export function NowPlayingBar() {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 h-[var(--nowplaying-h)] z-40 border-t border-white/[0.05] bg-[rgba(10,8,18,0.92)] backdrop-blur-xl">
+      <div
+        className="fixed bottom-0 left-0 right-0 h-[var(--nowplaying-h)] z-40 border-t border-white/[0.05] backdrop-blur-2xl backdrop-saturate-150"
+        style={{
+          background:
+            'linear-gradient(0deg, rgba(10,8,18,0.45) 0%, rgba(10,8,18,0.28) 100%), linear-gradient(180deg, transparent, rgb(var(--accent) / 0.05))',
+        }}
+      >
         <div className="grid grid-cols-[1fr_auto_1fr] items-center h-full px-5 gap-4">
           {/* Left: now-playing info */}
           <div className="flex items-center gap-3 min-w-0">
@@ -96,7 +102,16 @@ export function NowPlayingBar() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] font-semibold text-white">{np.title}</div>
                   <div className="truncate text-[12px] text-obsidian-300">
-                    {np.artistName}
+                    {np.artistId ? (
+                      <Link
+                        to={`/artist/${np.artistId}`}
+                        className="hover:text-cream hover:underline"
+                      >
+                        {np.artistName}
+                      </Link>
+                    ) : (
+                      np.artistName
+                    )}
                     {np.albumName && <span className="text-obsidian-400"> · {np.albumName}</span>}
                   </div>
                 </div>

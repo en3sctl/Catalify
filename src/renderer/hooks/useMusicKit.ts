@@ -8,10 +8,24 @@ import { diagnoseDRM } from '../utils/drm-check'
 function toNowPlaying(item: any): NowPlayingItem | null {
   if (!item) return null
   const attrs = item.attributes ?? {}
+  // MusicKit hands us the artist id in different places depending on
+  // where the queue was seeded from: catalog tracks expose
+  // `relationships.artists.data[0].id`, library tracks sometimes only
+  // have `attributes.artistUrl` we can parse, and search-result hits
+  // occasionally drop both. Try every shape, tolerate failure.
+  const relArtistId =
+    item.relationships?.artists?.data?.[0]?.id ||
+    item.relationships?.artist?.data?.[0]?.id
+  let parsedArtistId: string | undefined
+  if (!relArtistId && typeof attrs.artistUrl === 'string') {
+    const m = attrs.artistUrl.match(/\/artist\/[^/]+\/(\d+)/)
+    if (m) parsedArtistId = m[1]
+  }
   return {
     id: item.id,
     title: attrs.name ?? 'Unknown',
     artistName: attrs.artistName ?? '',
+    artistId: relArtistId || parsedArtistId,
     albumName: attrs.albumName ?? '',
     artworkUrl: artworkUrl(attrs.artwork?.url, 600),
     durationMs: attrs.durationInMillis ?? 0,

@@ -13,6 +13,11 @@ export function Artist() {
   const { id } = useParams<{ id: string }>()
   const [artist, setArtist] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  // All hooks must run on every render — keep them at the top, BEFORE
+  // any conditional return. The earlier ordering put `usePlayer` after
+  // a "loading" early-return, which mutated the hook count between
+  // renders and crashed the component.
+  const setShuffle = usePlayer((s) => s.setShuffle)
 
   useEffect(() => {
     if (!id) return
@@ -28,7 +33,6 @@ export function Artist() {
   const topSongs: any[] = artist.views?.['top-songs']?.data ?? []
   const albums: any[] = artist.views?.['full-albums']?.data ?? artist.views?.['featured-albums']?.data ?? []
   const similar: any[] = artist.views?.['similar-artists']?.data ?? []
-  const setShuffle = usePlayer((s) => s.setShuffle)
 
   const playTop = () => {
     if (topSongs.length === 0) return

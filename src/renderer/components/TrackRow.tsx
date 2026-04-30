@@ -31,6 +31,25 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
   const catalogId = attrs.playParams?.catalogId || track.id
   const liked = !!likedIds[catalogId]
   const isActive = current?.id === catalogId || current?.id === track.id
+  // Apple Music returns artist/album IDs in several different shapes
+  // depending on the response (catalog / charts / library / search).
+  // Try every known location so "click artist name" / "click album"
+  // works regardless of where this row was rendered from.
+  const artistId: string | undefined =
+    track.relationships?.artists?.data?.[0]?.id ||
+    track.relationships?.artist?.data?.[0]?.id ||
+    attrs.artistId ||
+    (typeof attrs.artistUrl === 'string'
+      ? attrs.artistUrl.match(/\/artist\/[^/]+\/(\d+)/)?.[1]
+      : undefined)
+  const albumId: string | undefined =
+    track.relationships?.albums?.data?.[0]?.id ||
+    track.relationships?.album?.data?.[0]?.id ||
+    attrs.playParams?.albumId ||
+    attrs.albumId ||
+    (typeof attrs.url === 'string'
+      ? attrs.url.match(/\/album\/[^/]+\/(\d+)/)?.[1]
+      : undefined)
 
   const handleContextMenu = (e: React.MouseEvent) => {
     contextMenu.open(e, trackContextItems(track, { navigate, onPlay }))
@@ -69,9 +88,9 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
           {title}
         </div>
         <div className="truncate text-[12px] text-obsidian-300">
-          {attrs.artistId ? (
+          {artistId ? (
             <Link
-              to={`/artist/${attrs.artistId}`}
+              to={`/artist/${artistId}`}
               className="hover:text-cream hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
@@ -81,7 +100,17 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
         </div>
       </div>
       {showAlbum && (
-        <div className="truncate text-[12px] text-obsidian-300 hidden md:block">{album}</div>
+        <div className="truncate text-[12px] text-obsidian-300 hidden md:block">
+          {albumId ? (
+            <Link
+              to={`/album/${albumId}`}
+              className="hover:text-cream hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {album}
+            </Link>
+          ) : album}
+        </div>
       )}
       <button
         onClick={(e) => { e.stopPropagation(); toggleLike(catalogId) }}

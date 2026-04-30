@@ -204,6 +204,120 @@ export async function getArtist(id: string) {
   return res.data.data[0]
 }
 
+/**
+ * Apple Music catalog charts — top songs / albums / playlists for the
+ * user's storefront. Apple updates these throughout the day, so it's the
+ * cheapest way to give Home some "today vs yesterday" variety without
+ * needing the listening-history APIs (which require pro tokens).
+ *
+ * The `/charts` endpoint itself does NOT return relationships, which
+ * means TrackRow / MediaCard can't link artist or album names from the
+ * raw response. We re-hydrate songs + albums via `/v1/catalog/.../songs`
+ * and `/v1/catalog/.../albums` with `include=artists,albums` so the
+ * resulting items carry `relationships.artists.data[0].id` etc — which
+ * is what the link-resolution fallback chain in TrackRow / MediaCard
+ * looks for first.
+ *
+ * Returns `{ songs, albums, playlists }` where each is an array of items.
+ */
+export async function getCharts(
+  types: Array<'songs' | 'albums' | 'playlists'> = ['songs', 'albums', 'playlists'],
+  limit = 20,
+) {
+  const mk = getMusicKit()
+  const sf = await storefront()
+  try {
+    const res = await mk.api.music(`/v1/catalog/${sf}/charts`, {
+      types: types.join(','),
+      limit,
+    })
+    const groups = res.data?.results ?? {}
+    const pick = (key: string) => groups[key]?.[0]?.data ?? []
+    let songs = pick('songs') as any[]
+    let albums = pick('albums') as any[]
+    const playlists = pick('playlists') as any[]
+
+    // Enrich songs with artist/album relationships in a single batch call.
+    if (songs.length > 0) {
+      try {
+        const ids = songs.map((s) => s.id).filter(Boolean)
+        const detail = await mk.api.music(`/v1/catalog/${sf}/songs`, {
+          ids: ids.join(','),
+          include: 'artists,albums',
+        })
+        const map = new Map<string, any>()
+        for (const s of detail.data?.data ?? []) map.set(s.id, s)
+        songs = songs.map((s) => map.get(s.id) ?? s)
+      } catch (err) {
+        console.warn('[charts] song enrichment failed', err)
+      }
+    }
+
+    // Same trick for albums so MediaCard's "artist subtitle as link" works.
+    if (albums.length > 0) {
+      try {
+        const ids = albums.map((a) => a.id).filter(Boolean)
+        const detail = await mk.api.music(`/v1/catalog/${sf}/albums`, {
+          ids: ids.join(','),
+          include: 'artists',
+        })
+        const map = new Map<string, any>()
+        for (const a of detail.data?.data ?? []) map.set(a.id, a)
+        albums = albums.map((a) => map.get(a.id) ?? a)
+      } catch (err) {
+        console.warn('[charts] album enrichment failed', err)
+      }
+    }
+
+    return { songs, albums, playlists }
+  } catch (err: any) {
+    console.warn('[MusicKit] /v1/catalog/charts unavailable', err?.message || err)
+    return { songs: [], albums: [], playlists: [] }
+  }
+}
+
+/**
+ * Editorial groupings Apple curates per storefront — "New Music",
+ * "Today's Hits", genre showcases. The exact slugs vary by region so we
+ * accept whatever is returned. Useful as a "Browse" rail.
+ */
+export async function getEditorialGroupings(limit = 12) {
+  const mk = getMusicKit()
+  const sf = await storefront()
+  try {
+    const res = await mk.api.music(`/v1/editorial/${sf}/groupings`, { limit })
+    return (res.data?.data as any[]) ?? []
+  } catch (err: any) {
+    console.warn('[MusicKit] /v1/editorial/groupings unavailable', err?.message || err)
+    return []
+  }
+}
+
+/**
+ * Tries `/v1/me/recommendations` again with a `groupId` filter to get
+ * fresher/different cards than the default landing rail. Apple rotates
+ * groupIds throughout the day so the result drifts naturally.
+ */
+export async function getRotatingRecommendations(limit = 12) {
+  const mk = getMusicKit()
+  try {
+    // Cache-bust by appending a coarse hour-bucket — Apple's response
+    // varies modestly across hours, but more importantly this skips any
+    // local HTTP cache MusicKit might have layered in.
+    const bucket = Math.floor(Date.now() / (1000 * 60 * 30)).toString()
+    const res = await mk.api.music('/v1/me/recommendations', {
+      limit,
+      // Pass the bucket as a benign param — Apple ignores unknown query
+      // keys but the URL changes, defeating any in-memory cache.
+      _t: bucket,
+    } as any)
+    return res.data?.data ?? []
+  } catch (err: any) {
+    console.warn('[MusicKit] rotating recommendations unavailable', err?.message || err)
+    return []
+  }
+}
+
 export async function getStations(limit = 20) {
   const mk = getMusicKit()
   const sf = await storefront()

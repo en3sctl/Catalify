@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { usePlayer } from '../store/player'
 
 export function useKeyboardShortcuts() {
+  const navigate = useNavigate()
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't hijack keys while typing in inputs
@@ -9,6 +11,10 @@ export function useKeyboardShortcuts() {
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
 
       const p = usePlayer.getState()
+      // Alt+Arrows = browser-style back/forward navigation. Checked
+      // before the plain-arrow seek/volume bindings so it wins.
+      if (e.altKey && e.code === 'ArrowLeft') { e.preventDefault(); navigate(-1); return }
+      if (e.altKey && e.code === 'ArrowRight') { e.preventDefault(); navigate(1); return }
       if (e.code === 'Space') { e.preventDefault(); p.toggle() }
       else if (e.code === 'ArrowRight' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); p.next() }
       else if (e.code === 'ArrowLeft' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); p.previous() }
@@ -22,5 +28,5 @@ export function useKeyboardShortcuts() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [navigate])
 }

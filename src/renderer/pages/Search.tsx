@@ -266,7 +266,14 @@ function GridSection({
         {items.slice(0, 10).map((item) => {
           const attrs = item.attributes ?? {}
           const art = artworkUrl(attrs.artwork?.url, 400)
-          const to = kind === 'album' ? `/album/${item.id}` : kind === 'playlist' ? `/playlist/${item.id}` : `#`
+          const to =
+            kind === 'album'
+              ? `/album/${item.id}`
+              : kind === 'playlist'
+                ? `/playlist/${item.id}`
+                : kind === 'artist'
+                  ? `/artist/${item.id}`
+                  : `#`
           return (
             <Link
               key={item.id}
