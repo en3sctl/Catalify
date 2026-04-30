@@ -69,8 +69,6 @@ export function Search() {
   const artists = results?.artists?.data ?? []
   const playlists = results?.playlists?.data ?? []
 
-  const songIds = useMemo(() => songs.map((s: any) => s.id), [songs])
-
   return (
     <div className="space-y-8 pb-10">
       <div className="sticky top-0 z-10 -mx-8 -mt-8 px-8 pt-8 pb-4 bg-gradient-to-b from-obsidian-950 via-obsidian-950/95 to-transparent">
@@ -169,7 +167,7 @@ export function Search() {
                 key={s.id}
                 index={i}
                 track={s}
-                onPlay={() => { commitRecent(term); playSongs(songIds, i).catch(console.error) }}
+                onPlay={() => { commitRecent(term); playSongs([s.id], 0).catch(console.error) }}
               />
             ))}
           </div>
@@ -185,7 +183,7 @@ export function Search() {
                 key={s.id}
                 index={i}
                 track={s}
-                onPlay={() => { commitRecent(term); playSongs(songIds, i).catch(console.error) }}
+                onPlay={() => { commitRecent(term); playSongs([s.id], 0).catch(console.error) }}
               />
             ))}
           </div>

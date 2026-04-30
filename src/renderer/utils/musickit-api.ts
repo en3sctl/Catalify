@@ -50,13 +50,34 @@ export function configureMusicKit(): Promise<MKInstance> {
     await window.MusicKit.configure(config);
 
     instance = window.MusicKit.getInstance();
+    // MusicKit's `authorize()` internally calls `unauthorize()` first to wipe
+    // any prior session. On a fresh Electron install there's no login cookie,
+    // so Apple's `webPlayerLogout` / `unauthenticate` endpoints return 403,
+    // which the library propagates as AUTHORIZATION_ERROR — killing the whole
+    // login flow before the popup even opens. Replace the internal method
+    // with a no-op so the cleanup step can't fail; a real logout is triggered
+    // separately via our own `unauthorize()` helper when the user clicks
+    // Sign Out, and at that point the session cookie exists so it succeeds.
+    const originalUnauthorize = instance.unauthorize?.bind(instance)
+    ;(instance as any).__realUnauthorize = originalUnauthorize
+    instance.unauthorize = async () => {
+      // no-op during authorize()-driven cleanup; real sign-out goes through
+      // `unauthorize()` in this module which calls `__realUnauthorize`.
+    }
     // Prefer standard bitrate first; some Electron/Widevine setups fail license
     // negotiation at higher variants and recover only after a manual downgrade.
     try { instance.bitrate = window.MusicKit.PlaybackBitrate?.STANDARD ?? 128 } catch {}
-    // Turn on Apple's native "up next" / autoplay behaviour so that when the
-    // explicit queue runs out MusicKit automatically streams related tracks
-    // (same as the Apple Music web player's default). Without this, playing a
-    // single song ends in silence once the track finishes.
+    // Autoplay ON. After a single-song play ends, Apple streams related
+    // tracks (same as the Apple Music web player's Up Next auto-generated
+    // list). Multi-track lists still route through our client engine
+    // first — our `playbackStateDidChange` state=5/10 handler calls
+    // `usePlayer.next()` as long as `playbackQueue.length > 1`, so
+    // autoplay only kicks in when our queue is genuinely exhausted.
+    //
+    // NOTE: Apple's "related" algorithm can occasionally cluster by track
+    // title on obscure catalogue items (we saw this with "Gizli Gizli" —
+    // a Turkish folk title shared by many unrelated songs). That's an
+    // Apple-side data quality issue, not something we can fix here.
     try { instance.autoplayEnabled = true } catch {}
     console.log(`[MusicKit] configured — initial storefront: ${instance.storefrontId}, authorized: ${instance.isAuthorized}`);
 
@@ -122,7 +143,13 @@ export async function authorize(): Promise<string> {
 
 export async function unauthorize(): Promise<void> {
   const mk = getMusicKit()
-  await mk.unauthorize()
+  // Call the real MusicKit unauthorize stashed in configureMusicKit.
+  // We swapped `mk.unauthorize` with a no-op so that authorize() can't
+  // self-destruct on fresh installs (see that comment for the full story).
+  const real = (mk as any).__realUnauthorize
+  if (typeof real === 'function') {
+    try { await real() } catch (err) { console.warn('[unauthorize] real call failed', err) }
+  }
   await window.bombo.store.delete('userToken')
   await window.bombo.store.delete('apple_loved_ids')
 }
@@ -364,29 +391,9 @@ async function wait(ms: number) {
 }
 
 /**
- * Fisher–Yates. Defined locally so this file doesn't have to static-import
- * player.ts (which would make the existing dynamic-import circle harder
- * to reason about).
- */
-function fisherYates<T>(arr: T[]): T[] {
-  const a = arr.slice()
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
-/**
  * Re-apply the user's repeat preference after a setQueue (MusicKit JS
- * resets it on some builds).
- *
- * NOTE: shuffle is deliberately NOT re-applied here. We manage shuffle
- * entirely client-side (reordering the queue passed to setQueue and
- * using upNextIds / playedIds in the store), and leave MusicKit's
- * internal shuffleMode at 0 permanently. Re-enabling it on MusicKit
- * right before `play()` is what caused "click song → random song plays"
- * (MusicKit re-rolls the first item in the queue after setQueue).
+ * resets it on some builds). Shuffle stays off on MusicKit permanently
+ * — the client owns sequencing via `playbackQueue`.
  */
 async function reapplyPlaybackModes() {
   try {
@@ -398,27 +405,24 @@ async function reapplyPlaybackModes() {
     if (repeat === 'none') mk.repeatMode = rMode?.none ?? 0
     else if (repeat === 'one') mk.repeatMode = rMode?.one ?? 1
     else mk.repeatMode = rMode?.all ?? 2
-    // Belt-and-braces: keep shuffleMode off after every setQueue.
     mk.shuffleMode = 0
   } catch {}
 }
 
-/** Seed the client-side upNext/played stacks from a freshly set queue. */
-async function seedClientQueue(upNextIds: string[]) {
+/**
+ * Seed the client-side queue engine from a freshly set MusicKit queue.
+ * `originalPlaylist` is the immutable source order; `startId` is the
+ * track MusicKit is about to play (becomes `playbackQueue[0]`).
+ */
+async function seedClientQueue(
+  originalPlaylist: string[],
+  startId: string,
+  artistMap?: Record<string, string>,
+) {
   try {
     const { usePlayer } = await import('../store/player')
-    usePlayer.getState().seedQueue(upNextIds)
+    usePlayer.getState().seedQueue(originalPlaylist, startId, artistMap)
   } catch {}
-}
-
-/** Read the current store's shuffle flag (dynamic import to dodge cycles). */
-async function readShuffleFlag(): Promise<boolean> {
-  try {
-    const { usePlayer } = await import('../store/player')
-    return !!usePlayer.getState().shuffle
-  } catch {
-    return false
-  }
 }
 
 type ApiProbe = {
@@ -602,363 +606,200 @@ export function friendlyPlaybackError(raw: string): string {
   return raw.slice(0, 180)
 }
 
-export async function playSongs(songIds: string[], startAt = 0) {
+/**
+ * `playSongs` is the single entry point for "user clicked play on an
+ * ordered list of tracks". It always hands MusicKit exactly ONE song
+ * via `setQueue({ song })`, and seeds the client-side queue engine
+ * (`usePlayer.originalPlaylist` + `playbackQueue`) which is the sole
+ * source of truth for "what plays next". `artistMap` is optional; when
+ * provided (album/playlist), `smartShuffle` uses it to spread clusters.
+ */
+export async function playSongs(
+  songIds: string[],
+  startAt = 0,
+  artistMap?: Record<string, string>,
+) {
   const ids = songIds
     .map((id) => String(id ?? '').trim())
     .filter(Boolean)
   if (ids.length === 0) return
   const index = Math.max(0, Math.min(startAt, ids.length - 1))
-  const ordered = index > 0 ? [...ids.slice(index), ...ids.slice(0, index)] : ids
-  // Library song IDs often look like "i.<...>" and can cause setQueue({ songs })
-  // to fail with UNKNOWN_ERROR in MusicKit JS. Keep catalog song IDs only.
-  const playable = ordered.filter((id) => !/^i\./i.test(id))
-  if (playable.length === 0) {
+  // Library song IDs often look like "i.<...>" and can cause setQueue
+  // to fail with UNKNOWN_ERROR in MusicKit JS. Keep catalog IDs only,
+  // but preserve the original order so `originalPlaylist` is coherent.
+  const playableOriginal = ids.filter((id) => !/^i\./i.test(id))
+  if (playableOriginal.length === 0) {
     toast.error(
       'Playback failed',
       'This list only contains library-only tracks that MusicKit JS cannot queue directly. Try a catalog track from Search.',
     )
     return
   }
-  if (playable.length !== ordered.length) {
-    console.warn(`[playSongs] dropped ${ordered.length - playable.length} library-only IDs`)
+  if (playableOriginal.length !== ids.length) {
+    console.warn(`[playSongs] dropped ${ids.length - playableOriginal.length} library-only IDs`)
   }
+  // Resolve the clicked track against the filtered pool so "start at
+  // index 3" still picks the right track after library-only entries
+  // were dropped.
+  const clickedRaw = ids[index]
+  const clickedId = playableOriginal.includes(clickedRaw)
+    ? clickedRaw
+    : playableOriginal[0]
+
   const mk = getMusicKit()
-
-  // Single-song playback seeds a **radio-style queue** rooted on that
-  // track. Two API shapes worth trying:
-  //
-  //   { station: `ra.<songId>` }  —  Apple's personal song-radio. This
-  //     uses Apple's collaborative-filtering + content-based similarity
-  //     for the seed track, THEN incorporates the user's taste profile.
-  //     Far more coherent than "related songs by title/name".
-  //
-  //   { song: <songId> }          —  queue one song and let autoplay
-  //     extend. Simpler but Apple's "related" relation sometimes
-  //     clusters by track TITLE (we saw one Turkish folk track produce
-  //     a queue of 20 unrelated songs literally named "Gizli Gizli").
-  //
-  // We try station first, fall back to `song:` only if the station
-  // can't be created (e.g. very new/unindexed catalog song).
-  if (playable.length === 1) {
-    const songId = playable[0]
-    await runPlaybackAction({
-      label: 'playSongs (single → station)',
-      primary: async () => {
-        await mk.setQueue({ station: `ra.${songId}` })
-        await reapplyPlaybackModes()
-        await wait(300)
-        await mk.play()
-      },
-      fallback: async () => {
-        try {
-          await mk.setQueue({ song: songId })
-          await reapplyPlaybackModes()
-          await wait(200)
-          await mk.play()
-          return
-        } catch {}
-        // Last resort: plain single-element queue + Apple autoplay.
-        await mk.setQueue({ songs: playable, startPlaying: true })
-        await reapplyPlaybackModes()
-      },
-    })
-    // Station queues are opaque — we can't project them into upNext/played,
-    // so reset those so the user doesn't see stale data.
-    await seedClientQueue([])
-    return
-  }
-
-  // Shuffle pre-mix: the clicked song stays at index 0 (so MusicKit plays
-  // IT first, not a random track), but everything after it is Fisher–Yates
-  // shuffled so auto-advance also respects shuffle mode. This replaces
-  // MusicKit's own shuffleMode behaviour, which re-rolled the first item.
-  const shuffleOn = await readShuffleFlag()
-  const finalQueue = shuffleOn && playable.length > 1
-    ? [playable[0], ...fisherYates(playable.slice(1))]
-    : playable
-
   await runPlaybackAction({
     label: 'playSongs',
     primary: async () => {
-      await mk.setQueue({ songs: finalQueue })
+      await mk.setQueue({ song: clickedId })
       await reapplyPlaybackModes()
-      // Give Widevine CDM time to process the license before playing.
-      // The atomic startPlaying: true can race with license installation
-      // in Electron's Widevine implementation.
       await wait(300)
       await mk.play()
     },
     fallback: async () => {
-      await mk.setQueue({ songs: finalQueue, startPlaying: true })
+      await mk.setQueue({ song: clickedId, startPlaying: true })
       await reapplyPlaybackModes()
     },
   })
-  // Seed the client queue AFTER setQueue so event-handler advanceToTrack
-  // sees the right upNext when the first nowPlayingItemDidChange fires.
-  await seedClientQueue(finalQueue.slice(1))
+  await seedClientQueue(playableOriginal, clickedId, artistMap)
 }
 
+/**
+ * Album playback resolves to catalog track IDs and delegates to
+ * `playSongs`. We also pass artistName info so smart shuffle can
+ * spread featuring artists out from the main album artist.
+ */
 export async function playAlbum(albumId: string, startAt = 0) {
-  // Shuffle case: resolve track IDs up front and delegate to playSongs so
-  // the pre-mix + client queue seeding lands exactly like a track click.
-  if (await readShuffleFlag()) {
-    try {
-      const album = await getAlbum(albumId)
-      const trackIds: string[] = (album?.relationships?.tracks?.data ?? [])
-        .map((t: any) => String(t?.id ?? ''))
-        .filter(Boolean)
-      if (trackIds.length > 0) {
-        await playSongs(trackIds, startAt)
-        return
-      }
-    } catch (err) {
-      console.warn('[playAlbum] failed to resolve track IDs for shuffle, falling back', err)
+  try {
+    const album = await getAlbum(albumId)
+    const tracks = album?.relationships?.tracks?.data ?? []
+    const trackIds: string[] = tracks
+      .map((t: any) => String(t?.id ?? ''))
+      .filter(Boolean)
+    const artistMap: Record<string, string> = {}
+    for (const t of tracks) {
+      const tid = String(t?.id ?? '')
+      const name = t?.attributes?.artistName
+      if (tid && typeof name === 'string') artistMap[tid] = name
     }
+    if (trackIds.length > 0) {
+      await playSongs(trackIds, startAt, artistMap)
+    }
+  } catch (err) {
+    console.error('[playAlbum] failed to resolve track IDs', err)
+    toast.error('Playback failed', 'Could not load this album right now.')
   }
-
-  const mk = getMusicKit()
-  const index = Math.max(0, startAt)
-  await runPlaybackAction({
-    label: 'playAlbum',
-    primary: async () => {
-      await mk.setQueue({ album: albumId })
-      await reapplyPlaybackModes()
-      if (index > 0 && typeof mk.changeToMediaAtIndex === 'function') {
-        await mk.changeToMediaAtIndex(index)
-      }
-      await wait(300)
-      await mk.play()
-    },
-    fallback: async () => {
-      await mk.setQueue({ album: albumId, startWith: index, startPlaying: true })
-      await reapplyPlaybackModes()
-    },
-  })
-  await seedUpNextFromMusicKit()
 }
 
 export async function playPlaylist(playlistId: string, startAt = 0) {
-  if (await readShuffleFlag()) {
-    try {
-      const playlist = await getPlaylist(playlistId)
-      const trackIds: string[] = (playlist?.relationships?.tracks?.data ?? [])
-        .map((t: any) => String(t?.attributes?.playParams?.catalogId ?? t?.id ?? ''))
-        .filter(Boolean)
-      if (trackIds.length > 0) {
-        await playSongs(trackIds, startAt)
-        return
-      }
-    } catch (err) {
-      console.warn('[playPlaylist] failed to resolve track IDs for shuffle, falling back', err)
+  try {
+    const playlist = await getPlaylist(playlistId)
+    const tracks = playlist?.relationships?.tracks?.data ?? []
+    const trackIds: string[] = tracks
+      .map((t: any) => String(t?.attributes?.playParams?.catalogId ?? t?.id ?? ''))
+      .filter(Boolean)
+    const artistMap: Record<string, string> = {}
+    for (const t of tracks) {
+      const tid = String(t?.attributes?.playParams?.catalogId ?? t?.id ?? '')
+      const name = t?.attributes?.artistName
+      if (tid && typeof name === 'string') artistMap[tid] = name
     }
+    if (trackIds.length > 0) {
+      await playSongs(trackIds, startAt, artistMap)
+    }
+  } catch (err) {
+    console.error('[playPlaylist] failed to resolve track IDs', err)
+    toast.error('Playback failed', 'Could not load this playlist right now.')
   }
-
-  const mk = getMusicKit()
-  const index = Math.max(0, startAt)
-  await runPlaybackAction({
-    label: 'playPlaylist',
-    primary: async () => {
-      await mk.setQueue({ playlist: playlistId })
-      await reapplyPlaybackModes()
-      if (index > 0 && typeof mk.changeToMediaAtIndex === 'function') {
-        await mk.changeToMediaAtIndex(index)
-      }
-      await wait(300)
-      await mk.play()
-    },
-    fallback: async () => {
-      await mk.setQueue({ playlist: playlistId, startWith: index, startPlaying: true })
-      await reapplyPlaybackModes()
-    },
-  })
-  await seedUpNextFromMusicKit()
 }
 
 /**
- * After a setQueue that was built from an album/playlist alias (so we
- * didn't pass an explicit songs[] array), pull the resolved queue IDs
- * back out of MusicKit and seed the client upNext. The first item is
- * "now playing" — the upcoming queue is everything after it.
+ * Client-side queue mutations. MusicKit's own queue is always a
+ * single-song playback unit, so "add to queue" / "remove from queue"
+ * / "reorder" reduce to mutating `usePlayer.playbackQueue`. Manual
+ * inserts are flagged `priority: true` so they survive shuffle toggles.
  */
-async function seedUpNextFromMusicKit() {
-  try {
-    const mk = getMusicKit()
-    const items = Array.isArray(mk.queue?.items) ? mk.queue.items : []
-    const currentIdx = mk.nowPlayingItemIndex ?? 0
-    const ids = items
-      .map((it: any) => String(it?.id ?? ''))
-      .filter((id: string) => !!id && !/^i\./i.test(id))
-    await seedClientQueue(ids.slice(currentIdx + 1))
-  } catch {}
-}
-
-/** Insert a catalog song right after the currently playing track. Uses
- * MusicKit's playNext so the queue isn't rebuilt and playback doesn't blip. */
 export async function queuePlayNext(songId: string): Promise<void> {
   if (!songId || /^i\./i.test(songId)) return
-  const mk = getMusicKit()
   try {
-    if (typeof mk.playNext === 'function') {
-      await mk.playNext({ song: songId })
-    } else if (mk.queue?.prepend) {
-      await mk.queue.prepend({ song: songId })
-    }
-    // Mirror to client upNext so shuffle-aware navigation stays coherent.
-    try {
-      const { usePlayer } = await import('../store/player')
-      const cur = usePlayer.getState().upNextIds
-      usePlayer.setState({ upNextIds: [songId, ...cur.filter((id) => id !== songId)] })
-    } catch {}
+    const { usePlayer } = await import('../store/player')
+    const cur = usePlayer.getState().playbackQueue
+    // Splice at index 1 — right after the current track. Dedupe against
+    // existing entries (excluding current) so re-adding doesn't stack.
+    const head = cur[0]
+    const tail = cur.slice(1).filter((it) => it.id !== songId)
+    const nextQueue = head
+      ? [head, { id: songId, priority: true }, ...tail]
+      : [{ id: songId, priority: true }]
+    usePlayer.setState({ playbackQueue: nextQueue })
   } catch (err) {
-    console.warn('[queue] playNext failed', err)
+    console.warn('[queuePlayNext] failed', err)
   }
 }
 
-/** Append a catalog song to the end of the current queue. */
 export async function queuePlayLater(songId: string): Promise<void> {
   if (!songId || /^i\./i.test(songId)) return
-  const mk = getMusicKit()
   try {
-    if (typeof mk.playLater === 'function') {
-      await mk.playLater({ song: songId })
-    } else if (mk.queue?.append) {
-      await mk.queue.append({ song: songId })
-    }
-    try {
-      const { usePlayer } = await import('../store/player')
-      const cur = usePlayer.getState().upNextIds
-      usePlayer.setState({ upNextIds: [...cur.filter((id) => id !== songId), songId] })
-    } catch {}
+    const { usePlayer } = await import('../store/player')
+    const cur = usePlayer.getState().playbackQueue
+    const head = cur[0]
+    const tail = cur.slice(1).filter((it) => it.id !== songId)
+    const nextQueue = head
+      ? [head, ...tail, { id: songId, priority: true }]
+      : [{ id: songId, priority: true }]
+    usePlayer.setState({ playbackQueue: nextQueue })
   } catch (err) {
-    console.warn('[queue] playLater failed', err)
+    console.warn('[queuePlayLater] failed', err)
   }
 }
 
 /**
- * Drop a specific index from the queue WITHOUT restarting the current
- * track. Preference order:
- *
- *   1. `mk.queue.remove(idx)` — present on most MusicKit JS v3 builds.
- *      Mutates the internal queue in place, no playback touch.
- *   2. `_queueItems.splice()` — undocumented backing-array fallback
- *      for builds where `.remove` isn't exposed.
- *   3. Full rebuild via `setQueue` — last resort. Pauses, rebuilds,
- *      waits for the new track to report non-zero duration, seeks to
- *      the old playback position, resumes. Even with the seek, this
- *      path has user-visible stutter (license re-negotiation on some
- *      CDN builds), which is why we only fall into it if the queue
- *      refuses in-place mutation.
+ * Remove a track from the upcoming queue (indices ≥ 1). The currently
+ * playing track can't be removed this way — use `next()` instead.
  */
-export async function queueRemoveAt(removeIdx: number): Promise<void> {
-  const mk = getMusicKit()
-  const items = Array.isArray(mk.queue?.items) ? mk.queue.items : []
-  if (removeIdx < 0 || removeIdx >= items.length) return
-  const currentIdx = mk.nowPlayingItemIndex ?? 0
-  const removedId = String(items[removeIdx]?.id ?? '')
-
-  // Mirror the removal in the client upNext/played stacks regardless of
-  // which MusicKit path succeeds — they're just strings, worst case we
-  // filter an ID that wasn't there.
+export async function queueRemoveById(songId: string): Promise<void> {
+  if (!songId) return
   try {
     const { usePlayer } = await import('../store/player')
-    const { upNextIds, playedIds } = usePlayer.getState()
+    const { playbackQueue, playedIds } = usePlayer.getState()
+    const head = playbackQueue[0]
+    if (head?.id === songId) return // never drop the active track
     usePlayer.setState({
-      upNextIds: upNextIds.filter((id) => id !== removedId),
-      playedIds: playedIds.filter((id) => id !== removedId),
+      playbackQueue: playbackQueue.filter((it, i) => i === 0 || it.id !== songId),
+      playedIds: playedIds.filter((id) => id !== songId),
     })
-  } catch {}
-
-  if (removeIdx === currentIdx) {
-    await mk.skipToNextItem().catch(() => {})
-    return
+  } catch (err) {
+    console.warn('[queueRemoveById] failed', err)
   }
-
-  // 1. Official mutation method on MusicKit JS v3 queues.
-  if (mk.queue && typeof mk.queue.remove === 'function') {
-    try {
-      mk.queue.remove(removeIdx)
-      return
-    } catch (err) {
-      console.warn('[queueRemoveAt] queue.remove() threw, falling back', err)
-    }
-  }
-
-  // 2. Internal backing array splice. MusicKit v3 typically keeps the
-  //    array at `_queueItems`; guard against API drift by looping over
-  //    every plausible property.
-  const backingCandidates: string[] = [
-    '_queueItems',
-    '_items',
-    'items',
-    '_unshuffledItems',
-  ]
-  for (const prop of backingCandidates) {
-    const internal = (mk.queue as any)?.[prop]
-    if (Array.isArray(internal) && typeof internal.splice === 'function' && internal.length === items.length) {
-      try {
-        internal.splice(removeIdx, 1)
-        return
-      } catch (err) {
-        console.warn(`[queueRemoveAt] splice on ${prop} failed`, err)
-      }
-    }
-  }
-
-  // 3. Last resort: rebuild the queue. This is the path that can still
-  //    cause a short audio blip, but it's only reached when MusicKit
-  //    exposes no in-place mutation at all.
-  const currentId = String(items[currentIdx]?.id ?? '')
-  const songs = items
-    .map((it: any, i: number) => (i === removeIdx ? null : String(it?.id ?? '')))
-    .filter((id: string | null) => !!id && !/^i\./i.test(id as string)) as string[]
-  if (!songs.includes(currentId)) {
-    console.warn('[queueRemoveAt] current track would be dropped, skipping')
-    return
-  }
-  const newCurrent = songs.indexOf(currentId)
-  const currentTimeSec = mk.currentPlaybackTime ?? 0
-  const wasPlaying = mk.isPlaying
-  try { await mk.pause() } catch {}
-  await mk.setQueue({ songs, startWith: newCurrent })
-  await reapplyPlaybackModes()
-  for (let i = 0; i < 20; i++) {
-    if ((mk.currentPlaybackDuration ?? 0) > 0) break
-    await wait(60)
-  }
-  try { await mk.seekToTime(currentTimeSec) } catch {}
-  if (wasPlaying) await mk.play().catch(() => {})
 }
 
-/** Reorder queue: move `fromIdx` to `toIdx`. Rebuilds the queue since
- * MusicKit's queue.items is effectively read-only. The currently playing
- * track keeps playing at the new index, preserving position. */
+export async function queueRemoveAt(removeIdx: number): Promise<void> {
+  try {
+    const { usePlayer } = await import('../store/player')
+    const q = usePlayer.getState().playbackQueue
+    // Queue drawer indexes start at 0 for the upcoming list, which
+    // maps to playbackQueue[removeIdx + 1].
+    const item = q[removeIdx + 1]
+    if (item) await queueRemoveById(item.id)
+  } catch {}
+}
+
+/**
+ * Reorder within the upcoming queue (indices ≥ 1). `from` / `to` are
+ * indices INTO playbackQueue. Index 0 (current track) is fixed — the
+ * caller should already be passing indices ≥ 1, but we guard anyway.
+ */
 export async function queueMove(fromIdx: number, toIdx: number): Promise<void> {
   if (fromIdx === toIdx) return
-  const mk = getMusicKit()
-  const items = Array.isArray(mk.queue?.items) ? mk.queue.items : []
-  if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx >= items.length) return
-  const songs = items
-    .map((it: any) => String(it?.id ?? ''))
-    .filter((id: string) => !!id && !/^i\./i.test(id)) as string[]
-  if (fromIdx >= songs.length || toIdx >= songs.length) return
-  const [moved] = songs.splice(fromIdx, 1)
-  songs.splice(toIdx, 0, moved)
-  const currentIdx = mk.nowPlayingItemIndex ?? 0
-  // Figure out where the currently-playing track now lives in the new order.
-  let newCurrent = currentIdx
-  if (fromIdx === currentIdx) newCurrent = toIdx
-  else {
-    if (fromIdx < currentIdx) newCurrent--
-    if (toIdx <= currentIdx) newCurrent++
+  try {
+    const { usePlayer } = await import('../store/player')
+    const q = [...usePlayer.getState().playbackQueue]
+    if (fromIdx < 1 || fromIdx >= q.length || toIdx < 1 || toIdx >= q.length) return
+    const [moved] = q.splice(fromIdx, 1)
+    q.splice(toIdx, 0, moved)
+    usePlayer.setState({ playbackQueue: q })
+  } catch (err) {
+    console.warn('[queueMove] failed', err)
   }
-  newCurrent = Math.max(0, Math.min(songs.length - 1, newCurrent))
-  const currentTimeMs = Math.round((mk.currentPlaybackTime ?? 0) * 1000)
-  const wasPlaying = mk.isPlaying
-  await mk.setQueue({ songs, startWith: newCurrent })
-  await reapplyPlaybackModes()
-  // Resume at the same playback time so reorder feels seamless.
-  try { await mk.seekToTime(currentTimeMs / 1000) } catch {}
-  if (wasPlaying) await mk.play().catch(() => {})
 }
 
 export async function playStation(stationId: string) {
@@ -976,10 +817,18 @@ export async function playStation(stationId: string) {
       await reapplyPlaybackModes()
     },
   })
-  // Stations are opaque on the MusicKit side — they stream one track at a
-  // time and we can't project the upcoming list. Clear our client queue so
-  // the Queue drawer + shuffle logic don't show stale history.
-  await seedClientQueue([])
+  // Stations stream one track at a time — no projectable source pool.
+  // Clear the client queue so the drawer + shuffle logic don't show
+  // stale data from a prior session.
+  try {
+    const { usePlayer } = await import('../store/player')
+    usePlayer.setState({
+      originalPlaylist: [],
+      playbackQueue: [],
+      playedIds: [],
+      sourceArtists: {},
+    })
+  } catch {}
 }
 
 // ——— Create library playlist ———

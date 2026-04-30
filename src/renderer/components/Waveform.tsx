@@ -25,7 +25,6 @@ export function Waveform({ bars = 110 }: { bars?: number }) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const accentRef = useRef<[number, number, number]>([255, 170, 95])
 
   const heights = useMemo(() => synthesizeWave(np?.id ?? 'idle', bars), [np?.id, bars])
 
@@ -33,12 +32,6 @@ export function Waveform({ bars = 110 }: { bars?: number }) {
   // skip the entire canvas redraw — that's the whole CPU win.
   const playedBar =
     durationMs > 0 ? Math.floor((progressMs / durationMs) * heights.length) : -1
-
-  // Pick up the accent colour once per track — getComputedStyle is a sync
-  // layout read and calling it every frame was part of the jank budget.
-  useEffect(() => {
-    accentRef.current = readCSSRGB('--accent', [255, 170, 95])
-  }, [np?.id])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -63,10 +56,13 @@ export function Waveform({ bars = 110 }: { bars?: number }) {
 
     const gap = 2
     const barW = Math.max(1, W / heights.length - gap)
-    const [ar, ag, ab] = accentRef.current
-    const playedColor = `rgb(${ar}, ${ag}, ${ab})`
-    const unplayedColor = 'rgba(255,255,255,0.22)'
-    const edgeColor = 'rgba(255,255,255,0.5)'
+    // Played bars use bright white, not the album-art accent. On covers
+    // with warm tones (sepia / brown) the accent colour sits close to
+    // the Now Playing page's ambient background and the fill became
+    // invisible — bar looked unfilled even halfway through the track.
+    const playedColor = 'rgba(255,255,255,0.95)'
+    const unplayedColor = 'rgba(255,255,255,0.14)'
+    const edgeColor = 'rgba(255,255,255,1)'
 
     for (let i = 0; i < heights.length; i++) {
       const h = Math.max(2, heights[i] * H * 0.85)
@@ -178,17 +174,6 @@ function mulberry32(seed: number): () => number {
     r ^= r + Math.imul(r ^ (r >>> 7), r | 61)
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296
   }
-}
-
-function readCSSRGB(prop: string, fallback: [number, number, number]): [number, number, number] {
-  try {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue(prop).trim()
-    const parts = raw.split(/\s+/).map((v) => parseInt(v, 10))
-    if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
-      return [parts[0], parts[1], parts[2]]
-    }
-  } catch {}
-  return fallback
 }
 
 function roundRect(

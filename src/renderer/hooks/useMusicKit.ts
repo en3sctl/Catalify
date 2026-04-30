@@ -74,9 +74,20 @@ export function useMusicKit() {
           usePlayer.getState().setDuration(item?.attributes?.durationInMillis ?? 0)
         }
         const onPlaybackStateChange = ({ state }: { state: number }) => {
-          // 2 = playing, 3 = paused, 5 = ended, 8 = buffering
+          // 1 = loading, 2 = playing, 3 = paused, 4 = stopped, 5 = ended,
+          // 8 = waiting/buffering, 10 = completed
           usePlayer.getState().setPlaying(state === 2)
           usePlayer.getState().setBuffering(state === 1 || state === 8)
+          // Track finished naturally. Under our single-song queue
+          // architecture MusicKit won't auto-advance (the queue literally
+          // has one item), so we drive the hand-off from here when our
+          // client queue has something after the current head. Otherwise
+          // let MusicKit's autoplay extend the session.
+          if (state === 5 || state === 10) {
+            if (usePlayer.getState().playbackQueue.length > 1) {
+              usePlayer.getState().next().catch((err) => console.error('[auto-advance]', err))
+            }
+          }
         }
         const onPlaybackTimeChange = ({ currentPlaybackTime }: { currentPlaybackTime: number }) => {
           usePlayer.getState().setProgress(Math.round(currentPlaybackTime * 1000))

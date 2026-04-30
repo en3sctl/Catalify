@@ -1,6 +1,6 @@
 {
   "name": "catalify",
-  "version": "0.1.0",
+  "version": "0.1.7",
   "description": "A personal, minimal Apple Music player — Çatalify",
   "author": "Enes",
   "license": "UNLICENSED",
@@ -14,8 +14,9 @@
     "prepare-icons": "node scripts/build-app-icon.js",
     "patch-dev-icon": "node scripts/patch-dev-icon.js",
     "build": "vite build",
-    "package": "npm run prepare-icons && vite build && electron-builder",
-    "release": "npm run prepare-icons && vite build && dotenv -e .env -- electron-builder --publish always"
+    "clean": "node -e \"require('fs').rmSync('release', {recursive:true, force:true})\"",
+    "package": "npm run clean && npm run prepare-icons && vite build && electron-builder",
+    "release": "npm run clean && npm run prepare-icons && vite build && dotenv -e .env -- electron-builder --publish always"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -57,13 +58,25 @@
     "directories": {
       "output": "release"
     },
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "41.1.1",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
       "assets/**/*",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "AuthKey_R49V439H33.p8",
+        "to": "AuthKey_R49V439H33.p8"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "assets/cat-icon.ico"

@@ -51,7 +51,27 @@
       "Bash(npx tsc *)",
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
       "Read(//c/Users/enes/Desktop/Enes/kodumun projeleri//**)",
-      "Read(//c/Users/enes/Desktop/Enes//**)"
+      "Read(//c/Users/enes/Desktop/Enes//**)",
+      "Bash(grep -n \"CATALIFY_TOKEN_ENDPOINT\\\\|DEFAULT_ENDPOINT\\\\|APPLE_TEAM_ID\\\\|APPLE_KEY_ID\\\\|AuthKey\\\\|\\\\\\\\.p8\" dist-electron/main/developer-token.js)",
+      "Bash(tee /tmp/catalify-build.log)",
+      "Bash(tee /tmp/catalify-build2.log)",
+      "Bash(tee /tmp/catalify-build3.log)",
+      "Read(//c/Users/enes/AppData/Local/Programs/Çatalify/**)",
+      "Read(//c/Users/enes/AppData/Local/Programs/**)",
+      "Read(//c/Users/enes/AppData/**)",
+      "Bash(tee /tmp/catalify-build4.log)",
+      "Bash(tasklist)",
+      "Bash(tasklist /FI \"PID eq 18932\")",
+      "Bash(powershell -Command 'Get-Process -Id 18932 2>$null | Select-Object Id,ProcessName,StartTime,MainWindowTitle | Format-List')",
+      "Bash(powershell -Command \"Stop-Process -Id 18932 -Force; Start-Sleep -Milliseconds 300; netstat -ano | Select-String ':5173'\")",
+      "PowerShell(Stop-Process -Id 35332 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Write-Host \"Port check:\"; netstat -ano | Select-String ':5173'; Write-Host \"Clearing session storage...\"; $dir = \"$env:APPDATA\\\\catalify\"; foreach \\($sub in 'Network','Local Storage','Session Storage','IndexedDB','Cache','Code Cache','Shared Dictionary','SharedStorage'\\) { $p = Join-Path $dir $sub; if \\(Test-Path $p\\) { Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue; Write-Host \"  cleared $sub\" } }; Write-Host \"Done.\")",
+      "PowerShell(Start-Sleep -Milliseconds 800; $line = netstat -ano | Select-String ':5173'; if \\($line\\) { Write-Host $line; $pid2 = \\($line -split '\\\\s+'\\)[-1]; Write-Host \"Still listening. PID: $pid2\"; Get-Process -Id $pid2 -ErrorAction SilentlyContinue | Select-Object Id,ProcessName | Format-List; Stop-Process -Id $pid2 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Write-Host \"After kill:\"; netstat -ano | Select-String ':5173' } else { Write-Host \"Port 5173 is FREE\" })",
+      "Bash(grep -v '^$')",
+      "WebFetch(domain:js-cdn.music.apple.com)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\enes\\AppData\\Local\\electron-builder\\Cache\\winCodeSign",
+      "C:\\Users\\enes\\AppData\\Local\\Programs\\catalify\\resources"
     ]
   }
 }
