@@ -10,8 +10,8 @@ A personal, minimal Apple Music desktop player for Windows. Dark. Fast. Colored 
 
    ```
    APPLE_TEAM_ID=XXXXXXXXXX            # 10-char Team ID from https://developer.apple.com/account (Membership)
-   APPLE_KEY_ID=BQJDU99MSG             # matches AuthKey_<KEY_ID>.p8
-   APPLE_PRIVATE_KEY_PATH=./AuthKey_BQJDU99MSG.p8
+   APPLE_KEY_ID=XXXXXXXXXX          # matches AuthKey_<KEY_ID>.p8
+   APPLE_PRIVATE_KEY_PATH=./AuthKey_XXXXXXXXXX.p8
    ```
 
 2. **Install dependencies** (this downloads the castlabs Electron build that has Widevine CDM):
