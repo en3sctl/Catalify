@@ -84,8 +84,14 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
       </div>
       {showArt && <Artwork src={art} size="sm" alt={title} />}
       <div className="min-w-0">
-        <div className={clsx('truncate text-[13.5px] font-medium', isActive ? 'accent-text' : 'text-cream')}>
-          {title}
+        <div
+          className={clsx(
+            'truncate text-[13.5px] font-medium flex items-center gap-1.5',
+            isActive ? 'accent-text' : 'text-cream',
+          )}
+        >
+          <span className="truncate">{title}</span>
+          {attrs.contentRating === 'explicit' && <ExplicitBadge />}
         </div>
         <div className="truncate text-[12px] text-obsidian-300">
           {artistId ? (
@@ -127,5 +133,23 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
         {formatDuration(duration)}
       </div>
     </div>
+  )
+}
+
+/**
+ * Tiny "E" pill that mirrors Apple Music's explicit badge — sits inline
+ * to the right of the track title. Stays visible when the user has
+ * explicit content ALLOWED; if they've turned it off, the row that
+ * would carry this badge is filtered out at the parent and never
+ * renders in the first place.
+ */
+function ExplicitBadge() {
+  return (
+    <span
+      title="Explicit"
+      className="flex-shrink-0 inline-flex items-center justify-center w-[15px] h-[15px] rounded-[3px] bg-cream/15 text-cream/85 text-[9px] font-bold leading-none tracking-tight"
+    >
+      E
+    </span>
   )
 }

@@ -5,6 +5,7 @@ import { search, playSongs } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl, clsx } from '../utils/format'
+import { useExplicitFilter } from '../utils/explicit'
 
 type Mode = 'all' | 'lyrics'
 
@@ -64,14 +65,17 @@ export function Search() {
 
   const clearRecent = () => { setRecent([]); window.bombo.store.set(RECENT_KEY, []) }
 
-  const songs = results?.songs?.data ?? []
-  const albums = results?.albums?.data ?? []
+  const rawSongs: any[] = results?.songs?.data ?? []
+  const rawAlbums: any[] = results?.albums?.data ?? []
+  const rawPlaylists: any[] = results?.playlists?.data ?? []
+  const songs = useExplicitFilter<any>(rawSongs)
+  const albums = useExplicitFilter<any>(rawAlbums)
+  const playlists = useExplicitFilter<any>(rawPlaylists)
   const artists = results?.artists?.data ?? []
-  const playlists = results?.playlists?.data ?? []
 
   return (
     <div className="space-y-8 pb-10">
-      <div className="sticky top-0 z-10 -mx-8 -mt-8 px-8 pt-8 pb-4 bg-gradient-to-b from-obsidian-950 via-obsidian-950/95 to-transparent">
+      <div className="sticky top-0 z-10 -mx-8 -mt-8 px-8 pt-8 pb-4 bg-gradient-to-b from-[rgba(10,8,18,0.55)] via-[rgba(10,8,18,0.3)] to-transparent backdrop-blur-xl">
         <div className="flex items-center gap-3 rounded-2xl px-4 py-3 bg-white/[0.04] border border-white/[0.06] focus-within:border-white/[0.14] transition">
           {mode === 'lyrics' ? <Quote size={18} className="accent-text" /> : <SearchIcon size={18} className="text-obsidian-300" />}
           <input

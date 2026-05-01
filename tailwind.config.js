@@ -12,8 +12,13 @@ module.exports = {
           700: '#221a2d',
           600: '#2d2439',
           500: '#3a2f48',
-          400: '#5b5167',
-          300: '#8a8292',
+          // 400/300 are the "secondary text" tones used across the app
+          // (Clear all, X chip removers, helper labels). Bumped lighter +
+          // warmer than the original plum-grays so they stay legible on
+          // top of the dynamic per-track BackdropAura wash, regardless of
+          // whether the current artwork is dark or bright.
+          400: '#9b94a3',
+          300: '#bab3bd',
           200: '#c5bfc9',
           100: '#ece6dc',   // warm cream — primary text
         },

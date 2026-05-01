@@ -28,6 +28,11 @@ export function TitleBar() {
   return (
     <div
       className="drag-region fixed top-0 left-0 right-0 h-[var(--titlebar-h)] z-50 flex items-center justify-between px-4 bg-black/25 backdrop-blur-xl border-b border-white/[0.04]"
+      style={{
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        willChange: 'transform',
+      }}
     >
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-2 pointer-events-none">

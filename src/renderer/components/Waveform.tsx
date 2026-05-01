@@ -36,43 +36,88 @@ export function Waveform({ bars = 110 }: { bars?: number }) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    if (rect.width === 0 || rect.height === 0) return
-    const dpr = window.devicePixelRatio || 1
-    const needsResize =
-      canvas.width !== Math.floor(rect.width * dpr) ||
-      canvas.height !== Math.floor(rect.height * dpr)
-    if (needsResize) {
-      canvas.width = Math.floor(rect.width * dpr)
-      canvas.height = Math.floor(rect.height * dpr)
+
+    // Hoisted draw — runs both on dependency change AND on container
+    // resize. Without the resize hook the canvas stayed sized to its
+    // pre-lyrics width, so the playhead drifted out of sync visually
+    // every time the user toggled the side lyrics panel.
+    const draw = () => {
+      const rect = canvas.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return
+      const dpr = window.devicePixelRatio || 1
+      const needsResize =
+        canvas.width !== Math.floor(rect.width * dpr) ||
+        canvas.height !== Math.floor(rect.height * dpr)
+      if (needsResize) {
+        canvas.width = Math.floor(rect.width * dpr)
+        canvas.height = Math.floor(rect.height * dpr)
+      }
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+      const W = rect.width
+      const H = rect.height
+      ctx.clearRect(0, 0, W, H)
+
+      // Pick how many bars actually fit. The full envelope has
+      // `heights.length` entries; in narrow layouts (lyrics-open mode
+      // halves the cover column) we render a downsampled subset so
+      // bars don't overflow the canvas — that overflow was making the
+      // played fill look ~75% complete when the song was actually 93%
+      // through, since the would-be-filled bars were clipped offscreen.
+      const minBarPx = 3 // bar + gap
+      const maxBars = Math.max(20, Math.floor(W / minBarPx))
+      const barCount = Math.min(heights.length, maxBars)
+      const gap = 2
+      const barW = Math.max(1, (W - (barCount - 1) * gap) / barCount)
+      const playedRatio = durationMs > 0 ? progressMs / durationMs : 0
+      const visiblePlayedBar = Math.floor(playedRatio * barCount)
+      // Played bars use bright white, not the album-art accent. On
+      // covers with warm tones the accent sits close to the ambient
+      // backdrop and the fill became invisible. Bumped unplayed alpha
+      // from 0.14 to 0.22 so the played→unplayed boundary doesn't
+      // visually swallow the bar immediately before the playhead.
+      const playedColor = 'rgba(255,255,255,0.95)'
+      const unplayedColor = 'rgba(255,255,255,0.22)'
+      const edgeColor = 'rgba(255,255,255,1)'
+
+      for (let i = 0; i < barCount; i++) {
+        // Resample the deterministic envelope so the wave shape stays
+        // recognisable regardless of how many bars we draw.
+        const srcIdx =
+          barCount === heights.length
+            ? i
+            : Math.min(
+                heights.length - 1,
+                Math.floor((i / Math.max(1, barCount - 1)) * (heights.length - 1)),
+              )
+        const h = Math.max(2, heights[srcIdx] * H * 0.85)
+        // Pixel-snap to a 1px grid so adjacent bars never lose a sliver
+        // to sub-pixel rounding (was making single bars look "missing"
+        // in narrow lyrics-open layouts).
+        const x = Math.round(i * (barW + gap))
+        const w = Math.max(1, Math.round(barW))
+        const y = Math.round((H - h) / 2)
+        const rh = Math.max(2, Math.round(h))
+        ctx.fillStyle =
+          i < visiblePlayedBar
+            ? playedColor
+            : i === visiblePlayedBar
+              ? edgeColor
+              : unplayedColor
+        roundRect(ctx, x, y, w, rh, w * 0.5)
+        ctx.fill()
+      }
     }
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    draw()
 
-    const W = rect.width
-    const H = rect.height
-    ctx.clearRect(0, 0, W, H)
-
-    const gap = 2
-    const barW = Math.max(1, W / heights.length - gap)
-    // Played bars use bright white, not the album-art accent. On covers
-    // with warm tones (sepia / brown) the accent colour sits close to
-    // the Now Playing page's ambient background and the fill became
-    // invisible — bar looked unfilled even halfway through the track.
-    const playedColor = 'rgba(255,255,255,0.95)'
-    const unplayedColor = 'rgba(255,255,255,0.14)'
-    const edgeColor = 'rgba(255,255,255,1)'
-
-    for (let i = 0; i < heights.length; i++) {
-      const h = Math.max(2, heights[i] * H * 0.85)
-      const x = i * (barW + gap)
-      const y = (H - h) / 2
-      ctx.fillStyle =
-        i < playedBar ? playedColor : i === playedBar ? edgeColor : unplayedColor
-      roundRect(ctx, x, y, barW, h, barW * 0.5)
-      ctx.fill()
-    }
+    // Watch the canvas's parent for layout changes (lyrics open/close
+    // shrinks the cover column over a 420ms transition; without this
+    // the bars stayed at their old width until the next progress tick).
+    const observer = new ResizeObserver(() => draw())
+    observer.observe(canvas)
+    return () => observer.disconnect()
   }, [heights, playedBar, durationMs])
 
   const handleClick = (e: React.MouseEvent) => {

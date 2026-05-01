@@ -23,6 +23,8 @@ import { MiniPlayer } from './pages/MiniPlayer'
 import { Liked } from './pages/Liked'
 import { Radio } from './pages/Radio'
 import { Artist } from './pages/Artist'
+import { Profile } from './pages/Profile'
+import { Settings } from './pages/Settings'
 import { Toasts } from './components/Toasts'
 import { ContextMenuProvider } from './components/ContextMenuProvider'
 import { LayoutGroup } from 'framer-motion'
@@ -88,6 +90,8 @@ function MainApp() {
                   <Route path="/liked" element={<Liked />} />
                   <Route path="/radio" element={<Radio />} />
                   <Route path="/artist/:id" element={<Artist />} />
+                  <Route path="/profile" element={<Profile />} />
+                  <Route path="/settings" element={<Settings />} />
                 </Routes>
               </LoginGate>
             </div>
@@ -108,11 +112,29 @@ function MiniPlayerApp() {
 
 function useRestoreLikes() {
   const setLiked = usePlayer((s) => s.setLiked)
+  const setLibrarySaved = usePlayer((s) => s.setLibrarySaved)
+  const setAllowExplicit = usePlayer((s) => s.setAllowExplicit)
   useEffect(() => {
     window.bombo.store.get<Record<string, boolean>>('likedIds').then((v) => {
       if (v) setLiked(v)
     })
-  }, [setLiked])
+    // Saved-album / saved-artist sets are persisted under the same
+    // pattern as likedIds — restore them on boot so "Saved" badges stay
+    // sticky between launches.
+    window.bombo.store
+      .get<{ albums?: Record<string, boolean>; artists?: Record<string, boolean> }>('librarySaved')
+      .then((v) => {
+        if (!v) return
+        if (v.albums) setLibrarySaved('albums', v.albums)
+        if (v.artists) setLibrarySaved('artists', v.artists)
+      })
+    // Explicit-content preference. setAllowExplicit also writes back to
+    // the store, so we only call it when the persisted value disagrees
+    // with the default to avoid a redundant write.
+    window.bombo.store.get<boolean>('settings.allowExplicit').then((v) => {
+      if (typeof v === 'boolean' && v === false) setAllowExplicit(false)
+    })
+  }, [setLiked, setLibrarySaved, setAllowExplicit])
 }
 
 function useFullScreen() {

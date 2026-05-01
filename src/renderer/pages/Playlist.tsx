@@ -5,12 +5,12 @@ import {
   getLibraryPlaylist,
   getPlaylist,
   isLibraryId,
-  playLibraryPlaylist,
-  playPlaylist,
+  playSongs,
 } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl } from '../utils/format'
+import { useExplicitFilter } from '../utils/explicit'
 import { usePlayer } from '../store/player'
 
 export function Playlist() {
@@ -33,17 +33,28 @@ export function Playlist() {
       .finally(() => setLoading(false))
   }, [id, isLibrary])
 
-  const tracks = useMemo(() => playlist?.relationships?.tracks?.data ?? [], [playlist])
+  const allTracks = useMemo(() => playlist?.relationships?.tracks?.data ?? [], [playlist])
+  const tracks = useExplicitFilter<any>(allTracks)
   const attrs = playlist?.attributes ?? {}
   const artLarge = artworkUrl(attrs.artwork?.url, 600)
 
   if (loading) return <div className="text-obsidian-400">Loading…</div>
   if (!playlist) return <div className="text-obsidian-400">Playlist not found.</div>
 
-  const playFromHere = (startAt = 0) =>
-    isLibrary
-      ? playLibraryPlaylist(playlist.id, startAt)
-      : playPlaylist(playlist.id, startAt)
+  const playFromHere = (startAt = 0) => {
+    // Queue from the post-explicit-filter list (see Album.tsx for why).
+    const ids: string[] = tracks
+      .map((t: any) => t?.attributes?.playParams?.catalogId || t?.id || '')
+      .filter(Boolean)
+    if (ids.length === 0) return Promise.resolve()
+    const artistMap: Record<string, string> = {}
+    for (const t of tracks) {
+      const tid = t?.attributes?.playParams?.catalogId || t?.id
+      const name = t?.attributes?.artistName
+      if (tid && typeof name === 'string') artistMap[tid] = name
+    }
+    return playSongs(ids, startAt, artistMap)
+  }
 
   return (
     <div className="space-y-6 pb-10">

@@ -2,7 +2,7 @@
   "name": "catalify",
   "version": "0.1.8",
   "description": "A personal, minimal Apple Music player — Çatalify",
-  "author": "Enes",
+  "author": "en3s.ctl",
   "license": "UNLICENSED",
   "private": true,
   "main": "dist-electron/main/main.js",
@@ -80,7 +80,8 @@
       "installerIcon": "assets/cat-icon.ico",
       "uninstallerIcon": "assets/cat-icon.ico",
       "installerHeaderIcon": "assets/cat-icon.ico",
-      "artifactName": "Catalify-Setup-${version}.${ext}"
+      "artifactName": "Catalify-Setup-${version}.${ext}",
+      "uninstallDisplayName": "Catalify version ${version}"
     },
     "publish": [
       {

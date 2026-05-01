@@ -23,6 +23,14 @@ export function BackdropAura() {
     <div
       aria-hidden
       className="fixed inset-0 overflow-hidden pointer-events-none bg-obsidian-950"
+      // Promote to its own GPU layer once and keep it there, so scrolls
+      // / route changes don't trigger compositor reshuffles that show up
+      // as horizontal seams + flicker bands across the blurred image.
+      style={{
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        willChange: 'transform',
+      }}
     >
       <AnimatePresence>
         {url && (
@@ -32,13 +40,23 @@ export function BackdropAura() {
             alt=""
             draggable={false}
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.6 }}
+            animate={{ opacity: 0.55 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
             className="absolute inset-0 w-full h-full object-cover"
             style={{
-              transform: 'scale(1.35)',
-              filter: 'blur(90px) saturate(170%)',
+              // 1.4× scale + 50px blur is the sweet spot we found after
+              // bigger numbers (1.5 / 70-90px) caused two problems:
+              //   1. heavy blur kernels make Chromium's compositor
+              //      re-rasterise this layer on every paint, which
+              //      shows up as horizontal flicker bands during
+              //      scroll / route changes / crossfade.
+              //   2. the blur-feathered fringe was reaching back into
+              //      the visible viewport on ultra-wide windows.
+              transform: 'scale(1.4) translateZ(0)',
+              filter: 'blur(50px) saturate(160%)',
+              backfaceVisibility: 'hidden',
+              willChange: 'opacity',
             }}
           />
         )}

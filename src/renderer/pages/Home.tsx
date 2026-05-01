@@ -29,6 +29,7 @@ import { Rail } from '../components/Rail'
 import { MediaCard } from '../components/MediaCard'
 import { usePlayer } from '../store/player'
 import { artworkUrl, clsx } from '../utils/format'
+import { useExplicitFilter } from '../utils/explicit'
 import { TrackRow } from '../components/TrackRow'
 
 interface HomeData {
@@ -135,14 +136,33 @@ export function Home() {
       />
 
       <QuickShortcuts />
+      <HomeBody data={data} loading={loading} />
+    </div>
+  )
+}
 
-      {data.recommendations.length > 0 && (
+function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
+  // Strip explicit content out of every list before render — affects
+  // both the visible cards and the `playSongs(...)` queue we hand off.
+  const recommendations = useExplicitFilter<any>(data.recommendations)
+  const chartSongs = useExplicitFilter<any>(data.chartSongs)
+  const chartAlbums = useExplicitFilter<any>(data.chartAlbums)
+  const chartPlaylists = useExplicitFilter<any>(data.chartPlaylists)
+  const librarySongs = useExplicitFilter<any>(data.librarySongs)
+  const recent = useExplicitFilter<any>(data.recent)
+  const playlists = useExplicitFilter<any>(data.playlists)
+  const rotation = useExplicitFilter<any>(data.rotation)
+  const recentlyAdded = useExplicitFilter<any>(data.recentlyAdded)
+
+  return (
+    <>
+      {recommendations.length > 0 && (
         <Rail
           title="Made for you"
           subtitle="Apple Music picks based on what you play"
           widthClass="w-48"
         >
-          {flattenRecommendations(data.recommendations)
+          {flattenRecommendations(recommendations)
             .slice(0, 16)
             .map((item) => (
               <MediaCard
@@ -154,23 +174,20 @@ export function Home() {
         </Rail>
       )}
 
-      {data.chartSongs.length > 0 && (
+      {chartSongs.length > 0 && (
         <section>
           <SectionHeader
             title="Top 100 right now"
             subtitle="What's charting on Apple Music today"
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-            {data.chartSongs.slice(0, 10).map((s, i) => (
+            {chartSongs.slice(0, 10).map((s, i) => (
               <TrackRow
                 key={s.id}
                 index={i}
                 track={s}
                 onPlay={() =>
-                  playSongs(
-                    data.chartSongs.map((x: any) => x.id),
-                    i,
-                  ).catch(console.error)
+                  playSongs(chartSongs.map((x: any) => x.id), i).catch(console.error)
                 }
               />
             ))}
@@ -178,23 +195,15 @@ export function Home() {
         </section>
       )}
 
-      {data.chartAlbums.length > 0 && (
-        <Rail
-          title="Trending albums"
-          subtitle="Most-played in your storefront"
-          widthClass="w-48"
-        >
-          {data.chartAlbums.slice(0, 14).map((item) => (
-            <MediaCard
-              key={item.id + (item.type ?? '')}
-              item={item}
-              onPlay={() => playItem(item)}
-            />
+      {chartAlbums.length > 0 && (
+        <Rail title="Trending albums" subtitle="Most-played in your storefront" widthClass="w-48">
+          {chartAlbums.slice(0, 14).map((item) => (
+            <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
         </Rail>
       )}
 
-      {data.librarySongs.length > 0 && (
+      {librarySongs.length > 0 && (
         <section>
           <SectionHeader
             title="From your library"
@@ -206,14 +215,14 @@ export function Home() {
             }
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
-            {data.librarySongs.slice(0, 10).map((s, i) => (
+            {librarySongs.slice(0, 10).map((s, i) => (
               <TrackRow
                 key={s.id}
                 index={i}
                 track={s}
                 onPlay={() =>
                   playSongs(
-                    data.librarySongs.map(
+                    librarySongs.map(
                       (x: any) => x.attributes?.playParams?.catalogId || x.id,
                     ),
                     i,
@@ -225,35 +234,23 @@ export function Home() {
         </section>
       )}
 
-      {data.recent.length > 0 && (
+      {recent.length > 0 && (
         <Rail title="Recently played" subtitle="Jump right back in" widthClass="w-48">
-          {data.recent.slice(0, 12).map((item) => (
-            <MediaCard
-              key={item.id + (item.type ?? '')}
-              item={item}
-              onPlay={() => playItem(item)}
-            />
+          {recent.slice(0, 12).map((item) => (
+            <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
         </Rail>
       )}
 
-      {data.chartPlaylists.length > 0 && (
-        <Rail
-          title="Editor's picks"
-          subtitle="Featured playlists right now"
-          widthClass="w-48"
-        >
-          {data.chartPlaylists.slice(0, 14).map((item) => (
-            <MediaCard
-              key={item.id + (item.type ?? '')}
-              item={item}
-              onPlay={() => playItem(item)}
-            />
+      {chartPlaylists.length > 0 && (
+        <Rail title="Editor's picks" subtitle="Featured playlists right now" widthClass="w-48">
+          {chartPlaylists.slice(0, 14).map((item) => (
+            <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
         </Rail>
       )}
 
-      {data.playlists.length > 0 && (
+      {playlists.length > 0 && (
         <Rail
           title="Your playlists"
           subtitle="From your Apple Music library"
@@ -264,34 +261,30 @@ export function Home() {
             </Link>
           }
         >
-          {data.playlists.slice(0, 12).map((item) => (
+          {playlists.slice(0, 12).map((item) => (
             <MediaCard key={item.id} item={item} onPlay={() => playItem(item)} />
           ))}
         </Rail>
       )}
 
-      {data.rotation.length > 0 && (
+      {rotation.length > 0 && (
         <Rail title="On repeat" subtitle="Your heavy rotation" widthClass="w-48">
-          {data.rotation.slice(0, 12).map((item) => (
-            <MediaCard
-              key={item.id + (item.type ?? '')}
-              item={item}
-              onPlay={() => playItem(item)}
-            />
+          {rotation.slice(0, 12).map((item) => (
+            <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
         </Rail>
       )}
 
-      {data.recentlyAdded.length > 0 && (
+      {recentlyAdded.length > 0 && (
         <Rail title="Recently added" subtitle="Fresh in your library" widthClass="w-48">
-          {data.recentlyAdded.slice(0, 12).map((item) => (
+          {recentlyAdded.slice(0, 12).map((item) => (
             <MediaCard key={item.id} item={item} onPlay={() => playItem(item)} />
           ))}
         </Rail>
       )}
 
       {loading && <Skeleton />}
-    </div>
+    </>
   )
 }
 
@@ -380,7 +373,7 @@ function HomeSearchBar() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 right-0 top-full mt-2 z-30 rounded-2xl overflow-hidden border border-white/[0.08] bg-[rgba(14,10,22,0.96)] backdrop-blur-xl shadow-[0_30px_60px_-24px_rgba(0,0,0,0.8)]"
+            className="absolute left-0 right-0 top-full mt-2 z-30 rounded-2xl overflow-hidden border border-white/[0.08] bg-[rgba(10,8,18,0.45)] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_30px_60px_-24px_rgba(0,0,0,0.7)]"
           >
             <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.04]">
               <span className="text-[11px] uppercase tracking-[0.2em] text-obsidian-400 font-medium">

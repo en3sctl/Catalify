@@ -1,7 +1,8 @@
-import { NavLink } from 'react-router-dom'
-import { Home, Search, Library, LogOut, Heart, Radio } from 'lucide-react'
+import { NavLink, Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Home, Search, Library, Heart, Radio, ChevronRight } from 'lucide-react'
 import { usePlayer } from '../store/player'
-import { authorize, unauthorize } from '../utils/musickit-api'
+import { authorize } from '../utils/musickit-api'
 
 const items = [
   { to: '/', label: 'Home', icon: Home },
@@ -21,6 +22,12 @@ export function Sidebar() {
       style={{
         background:
           'linear-gradient(180deg, rgb(var(--accent) / 0.06) 0%, rgba(10,8,18,0.18) 60%, rgba(10,8,18,0.28) 100%)',
+        // Pin to its own GPU layer so the backdrop-filter doesn't get
+        // re-rasterised every time the page below scrolls or animates —
+        // that re-paint is what manifested as horizontal flicker bands.
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        willChange: 'transform',
       }}
     >
       <nav className="flex flex-col gap-1 mt-2">
@@ -50,13 +57,63 @@ export function Sidebar() {
 
       <div className="mt-auto">
         <AuthButton ready={isReady} authorized={isAuthorized} />
-        <div className="mt-3 px-1 text-[10.5px] text-cream/40 leading-relaxed flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80 animate-pulse"></span>
-          <span className="flex-1 truncate">{isReady ? 'MusicKit ready' : 'Loading MusicKit…'}</span>
-          <span className="font-mono">0.1.0</span>
-        </div>
+        {isAuthorized && <ProfileChip />}
       </div>
     </aside>
+  )
+}
+
+/**
+ * Persistent profile entry at the foot of the sidebar — replaces the
+ * old "MusicKit ready / 0.1.0" status line. Shows the user's avatar
+ * (chosen on the Profile page) and display name; tapping it opens the
+ * full /profile route. Lives in both dev and prod builds.
+ */
+function ProfileChip() {
+  const [name, setName] = useState('')
+  const [avatar, setAvatar] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const tick = () => {
+      window.bombo.store.get<string>('profileName').then((v) => {
+        if (!cancelled) setName(v || '')
+      })
+      window.bombo.store.get<string>('profileAvatar').then((v) => {
+        if (!cancelled) setAvatar(v || null)
+      })
+    }
+    tick()
+    // Profile page can change these at any time; cheap poll keeps the
+    // chip in sync without wiring a cross-component event bus.
+    const id = window.setInterval(tick, 1500)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [])
+  return (
+    <Link
+      to="/profile"
+      className="mt-3 group flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-white/[0.04] transition"
+      title="Open profile"
+    >
+      <div className="w-8 h-8 rounded-full overflow-hidden bg-white/[0.06] border border-white/[0.08] flex-shrink-0">
+        {avatar ? (
+          <img src={avatar} alt="" draggable={false} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[12px] font-display text-cream/70">
+            {(name || 'U').slice(0, 1).toUpperCase()}
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="truncate text-[12.5px] font-semibold text-cream">
+          {name || 'Set up profile'}
+        </div>
+        <div className="truncate text-[10.5px] text-cream/45">View profile</div>
+      </div>
+      <ChevronRight size={14} className="text-cream/40 group-hover:text-cream/80 flex-shrink-0 transition" />
+    </Link>
   )
 }
 
@@ -69,16 +126,10 @@ function AuthButton({ ready, authorized }: { ready: boolean; authorized: boolean
       </button>
     )
   }
-  if (authorized) {
-    return (
-      <button
-        onClick={() => unauthorize().then(() => location.reload())}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-obsidian-300 hover:text-white hover:bg-white/[0.04]"
-      >
-        <LogOut size={15} /> Sign out
-      </button>
-    )
-  }
+  // Sign-out lives on the Profile page now — keeps it from being a
+  // single mis-click away in the sidebar's bottom corner. Only the
+  // un-authed state still surfaces the prominent sign-in CTA here.
+  if (authorized) return null
   return (
     <button
       onClick={() => authorize().catch(console.error)}

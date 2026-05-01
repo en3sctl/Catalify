@@ -379,22 +379,41 @@ export async function getPersonalStation() {
 
 // ——— Library (requires user auth) ———
 
-export async function getLibraryPlaylists(limit = 50) {
+/**
+ * Apple's /v1/me/library/<type> endpoints cap a single page at 100 items
+ * regardless of whatever `limit` we pass. A user with 200+ albums hit
+ * the cap and newly-added items often live past the first page (Apple
+ * doesn't always sort by dateAdded desc), so they were invisible to us
+ * even though the POST that added them succeeded. We page-walk until
+ * we either fill the requested limit or hit a short page = end-of-list.
+ */
+async function paginateLibrary(path: string, limit: number): Promise<any[]> {
   const mk = getMusicKit()
-  const res = await mk.api.music('/v1/me/library/playlists', { limit })
-  return res.data.data
+  const PAGE = 100
+  const out: any[] = []
+  let offset = 0
+  while (out.length < limit) {
+    const ask = Math.min(PAGE, limit - out.length)
+    const res = await mk.api.music(path, { limit: ask, offset })
+    const batch: any[] = res.data?.data ?? []
+    out.push(...batch)
+    if (batch.length < ask) break
+    offset += batch.length
+    if (offset > 5000) break // safety cap; nobody legitimately needs this many
+  }
+  return out
 }
 
-export async function getLibraryAlbums(limit = 50) {
-  const mk = getMusicKit()
-  const res = await mk.api.music('/v1/me/library/albums', { limit })
-  return res.data.data
+export async function getLibraryPlaylists(limit = 200) {
+  return paginateLibrary('/v1/me/library/playlists', limit)
 }
 
-export async function getLibrarySongs(limit = 100) {
-  const mk = getMusicKit()
-  const res = await mk.api.music('/v1/me/library/songs', { limit })
-  return res.data.data
+export async function getLibraryAlbums(limit = 500) {
+  return paginateLibrary('/v1/me/library/albums', limit)
+}
+
+export async function getLibrarySongs(limit = 500) {
+  return paginateLibrary('/v1/me/library/songs', limit)
 }
 
 export async function getRecentlyPlayed(limit = 20) {
@@ -445,6 +464,45 @@ export async function getCatalogSongsByIds(ids: string[]) {
   return res.data.data
 }
 
+export async function getCatalogArtistsByIds(ids: string[]): Promise<any[]> {
+  if (ids.length === 0) return []
+  const mk = getMusicKit()
+  const sf = await storefront()
+  const batch = ids.slice(0, 100)
+  try {
+    const res = await mk.api.music(`/v1/catalog/${sf}/artists`, { ids: batch.join(',') })
+    return res.data?.data ?? []
+  } catch (err) {
+    console.warn('[catalog] getArtistsByIds failed', err)
+    return []
+  }
+}
+
+/**
+ * Apple Music's "Favorites" feature (heart on an artist in the iOS app).
+ * The /v1/me/library endpoint only knows songs/albums/playlists — for
+ * artists we hit /v1/me/favorites instead. Apple silently ignores
+ * favoriting an artist that's already favorited, which is the behaviour
+ * we want for the Follow button anyway.
+ *
+ * Best-effort: if the endpoint isn't available on the user's storefront
+ * we still keep the local "following" state so the Profile page lights
+ * up — sync will catch up next time the API works.
+ */
+export async function favoriteArtist(id: string): Promise<void> {
+  const mk = getMusicKit()
+  await mk.api.music('/v1/me/favorites', { 'ids[artists]': id }, {
+    fetchOptions: { method: 'POST' },
+  })
+}
+
+export async function unfavoriteArtist(id: string): Promise<void> {
+  const mk = getMusicKit()
+  await mk.api.music('/v1/me/favorites', { 'ids[artists]': id }, {
+    fetchOptions: { method: 'DELETE' },
+  })
+}
+
 // ——— Apple Music "Love" rating (syncs the ❤ with user's account) ———
 
 export async function loveSong(songId: string): Promise<void> {
@@ -486,11 +544,40 @@ export async function getSongRatings(ids: string[]): Promise<Record<string, numb
 
 // ——— Add/remove from user's library ———
 
-export async function addToLibrary(type: 'songs' | 'albums' | 'playlists', id: string) {
+/**
+ * Adds a catalog item into the user's Apple Music library.
+ *
+ * MusicKit JS's `mk.api.music()` wrapper has historically been flaky on
+ * POST verbs — depending on the version it'll either drop our query
+ * params, body-encode them when Apple expects query string, or 200-OK
+ * a request that Apple silently rejected. We hit `api.music.apple.com`
+ * directly with `fetch` so the response status is the source of truth:
+ * 202 / 204 = added, anything else throws and the store rolls back.
+ */
+export async function addToLibrary(
+  type: 'songs' | 'albums' | 'playlists' | 'artists',
+  id: string,
+) {
   const mk = getMusicKit()
-  await mk.api.music(`/v1/me/library`, { [`ids[${type}]`]: id }, {
-    fetchOptions: { method: 'POST' },
+  if (!devToken) throw new Error('developer token not ready')
+  if (!mk.musicUserToken) throw new Error('user not signed in')
+  const url = new URL('https://api.music.apple.com/v1/me/library')
+  url.searchParams.set(`ids[${type}]`, id)
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${devToken}`,
+      'Music-User-Token': String(mk.musicUserToken),
+    },
   })
+  if (!res.ok) {
+    let body = ''
+    try {
+      body = await res.text()
+    } catch {}
+    console.warn('[addToLibrary] Apple rejected', { type, id, status: res.status, body: body.slice(0, 300) })
+    throw new Error(`addToLibrary ${type}=${id} → ${res.status}`)
+  }
 }
 
 // ——— Playback ———

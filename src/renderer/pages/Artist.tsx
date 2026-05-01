@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Play, Shuffle } from 'lucide-react'
+import { Play, Shuffle, UserPlus, UserCheck } from 'lucide-react'
 import { getArtist, playSongs, playAlbum } from '../utils/musickit-api'
 import { TrackRow } from '../components/TrackRow'
 import { Artwork } from '../components/Artwork'
 import { MediaCard } from '../components/MediaCard'
 import { Rail } from '../components/Rail'
 import { artworkUrl } from '../utils/format'
+import { useExplicitFilter } from '../utils/explicit'
 import { usePlayer } from '../store/player'
 
 export function Artist() {
@@ -18,6 +19,11 @@ export function Artist() {
   // a "loading" early-return, which mutated the hook count between
   // renders and crashed the component.
   const setShuffle = usePlayer((s) => s.setShuffle)
+  const rawTopSongs: any[] = artist?.views?.['top-songs']?.data ?? []
+  const rawAlbums: any[] =
+    artist?.views?.['full-albums']?.data ?? artist?.views?.['featured-albums']?.data ?? []
+  const topSongs = useExplicitFilter<any>(rawTopSongs)
+  const albums = useExplicitFilter<any>(rawAlbums)
 
   useEffect(() => {
     if (!id) return
@@ -30,8 +36,6 @@ export function Artist() {
 
   const attrs = artist.attributes ?? {}
   const art = artworkUrl(attrs.artwork?.url, 800)
-  const topSongs: any[] = artist.views?.['top-songs']?.data ?? []
-  const albums: any[] = artist.views?.['full-albums']?.data ?? artist.views?.['featured-albums']?.data ?? []
   const similar: any[] = artist.views?.['similar-artists']?.data ?? []
 
   const playTop = () => {
@@ -71,7 +75,7 @@ export function Artist() {
           {attrs.genreNames?.length > 0 && (
             <div className="mt-2 text-obsidian-300 text-sm">{attrs.genreNames.slice(0, 3).join(' · ')}</div>
           )}
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex gap-3 flex-wrap">
             <button
               onClick={playTop}
               disabled={topSongs.length === 0}
@@ -86,6 +90,7 @@ export function Artist() {
             >
               <Shuffle size={15} /> Shuffle
             </button>
+            <FollowToggle artistId={artist.id} />
           </div>
         </div>
       </div>
@@ -125,5 +130,20 @@ export function Artist() {
         </Rail>
       )}
     </div>
+  )
+}
+
+function FollowToggle({ artistId }: { artistId: string }) {
+  const followed = usePlayer((s) => !!s.librarySaved.artists[artistId])
+  const toggle = usePlayer((s) => s.toggleLibraryArtist)
+  return (
+    <button
+      onClick={() => toggle(artistId)}
+      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-cream hover:bg-white/[0.1] transition"
+      title={followed ? 'Following' : 'Follow this artist'}
+    >
+      {followed ? <UserCheck size={15} /> : <UserPlus size={15} />}
+      {followed ? 'Following' : 'Follow'}
+    </button>
   )
 }

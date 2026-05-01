@@ -29,6 +29,7 @@ function toNowPlaying(item: any): NowPlayingItem | null {
     albumName: attrs.albumName ?? '',
     artworkUrl: artworkUrl(attrs.artwork?.url, 600),
     durationMs: attrs.durationInMillis ?? 0,
+    contentRating: attrs.contentRating,
   }
 }
 

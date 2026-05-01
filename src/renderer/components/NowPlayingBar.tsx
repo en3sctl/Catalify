@@ -51,6 +51,9 @@ export function NowPlayingBar() {
         style={{
           background:
             'linear-gradient(0deg, rgba(10,8,18,0.45) 0%, rgba(10,8,18,0.28) 100%), linear-gradient(180deg, transparent, rgb(var(--accent) / 0.05))',
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+          willChange: 'transform',
         }}
       >
         <div className="grid grid-cols-[1fr_auto_1fr] items-center h-full px-5 gap-4">

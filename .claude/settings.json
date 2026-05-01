@@ -67,7 +67,18 @@
       "PowerShell(Stop-Process -Id 35332 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Write-Host \"Port check:\"; netstat -ano | Select-String ':5173'; Write-Host \"Clearing session storage...\"; $dir = \"$env:APPDATA\\\\catalify\"; foreach \\($sub in 'Network','Local Storage','Session Storage','IndexedDB','Cache','Code Cache','Shared Dictionary','SharedStorage'\\) { $p = Join-Path $dir $sub; if \\(Test-Path $p\\) { Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue; Write-Host \"  cleared $sub\" } }; Write-Host \"Done.\")",
       "PowerShell(Start-Sleep -Milliseconds 800; $line = netstat -ano | Select-String ':5173'; if \\($line\\) { Write-Host $line; $pid2 = \\($line -split '\\\\s+'\\)[-1]; Write-Host \"Still listening. PID: $pid2\"; Get-Process -Id $pid2 -ErrorAction SilentlyContinue | Select-Object Id,ProcessName | Format-List; Stop-Process -Id $pid2 -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; Write-Host \"After kill:\"; netstat -ano | Select-String ':5173' } else { Write-Host \"Port 5173 is FREE\" })",
       "Bash(grep -v '^$')",
-      "WebFetch(domain:js-cdn.music.apple.com)"
+      "WebFetch(domain:js-cdn.music.apple.com)",
+      "Bash(awk -F= '{print $1}')",
+      "Bash(gh repo *)",
+      "Bash(gh release *)",
+      "Bash(curl -s -w \"\\\\n[status: %{http_code}]\\\\n\" \"https://catalify-token.catalenes6.workers.dev/token\")",
+      "Bash(node -e \"require\\('./dist-electron/main/developer-token.js'\\); console.log\\('require OK'\\)\")",
+      "Bash(git check-ignore *)",
+      "Bash(git ls-files *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git stash *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\enes\\AppData\\Local\\electron-builder\\Cache\\winCodeSign",

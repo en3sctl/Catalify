@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Play, Shuffle } from 'lucide-react'
+import { Play, Shuffle, Plus, Check } from 'lucide-react'
 import {
   getAlbum,
   getLibraryAlbum,
   isLibraryId,
-  playAlbum,
-  playLibraryAlbum,
+  playSongs,
 } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl } from '../utils/format'
+import { useExplicitFilter } from '../utils/explicit'
 import { usePlayer } from '../store/player'
 
 export function Album() {
@@ -29,7 +29,8 @@ export function Album() {
       .finally(() => setLoading(false))
   }, [id, isLibrary])
 
-  const tracks = useMemo(() => album?.relationships?.tracks?.data ?? [], [album])
+  const allTracks = useMemo(() => album?.relationships?.tracks?.data ?? [], [album])
+  const tracks = useExplicitFilter<any>(allTracks)
   const attrs = album?.attributes ?? {}
   const artLarge = artworkUrl(attrs.artwork?.url, 600)
   const artistId =
@@ -48,10 +49,23 @@ export function Album() {
     return <div className="text-obsidian-400">Album not found.</div>
   }
 
-  const playFromHere = (startAt = 0) =>
-    isLibrary
-      ? playLibraryAlbum(album.id, startAt)
-      : playAlbum(album.id, startAt)
+  const playFromHere = (startAt = 0) => {
+    // Always queue from the visible (post-explicit-filter) list so the
+    // user's "Allow explicit" preference holds even on Play / Shuffle
+    // taps — the catalog-side play helpers would otherwise re-fetch
+    // the album and queue every track regardless.
+    const ids: string[] = tracks
+      .map((t: any) => t?.attributes?.playParams?.catalogId || t?.id || '')
+      .filter(Boolean)
+    if (ids.length === 0) return Promise.resolve()
+    const artistMap: Record<string, string> = {}
+    for (const t of tracks) {
+      const tid = t?.attributes?.playParams?.catalogId || t?.id
+      const name = t?.attributes?.artistName
+      if (tid && typeof name === 'string') artistMap[tid] = name
+    }
+    return playSongs(ids, startAt, artistMap)
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -92,6 +106,7 @@ export function Album() {
             >
               <Shuffle size={15} /> Shuffle
             </button>
+            <LibraryToggle albumId={album.id} albumSnapshot={album} />
           </div>
         </div>
       </div>
@@ -109,5 +124,34 @@ export function Album() {
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * "Add to Library" / "Saved" pill. Library albums (already in library
+ * by definition) hide it; for catalog albums it flips state optimistically
+ * and surfaces a toast on failure / re-press.
+ */
+function LibraryToggle({
+  albumId,
+  albumSnapshot,
+}: {
+  albumId: string
+  albumSnapshot: any
+}) {
+  const saved = usePlayer((s) => !!s.librarySaved.albums[albumId])
+  const toggle = usePlayer((s) => s.toggleLibraryAlbum)
+  // Library-side IDs are already in the library — no point offering to
+  // re-add. Hide rather than disable so the row stays clean.
+  if (/^[ipl]\./i.test(albumId)) return null
+  return (
+    <button
+      onClick={() => toggle(albumId, albumSnapshot)}
+      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-white hover:bg-white/[0.1] transition"
+      title={saved ? 'In your library' : 'Add to library'}
+    >
+      {saved ? <Check size={15} /> : <Plus size={15} />}
+      {saved ? 'Saved' : 'Add to library'}
+    </button>
   )
 }

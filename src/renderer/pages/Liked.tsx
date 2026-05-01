@@ -3,20 +3,22 @@ import { Heart, Play, Shuffle } from 'lucide-react'
 import { usePlayer } from '../store/player'
 import { getCatalogSongsByIds, playSongs } from '../utils/musickit-api'
 import { TrackRow } from '../components/TrackRow'
+import { useExplicitFilter } from '../utils/explicit'
 
 export function Liked() {
   const likedIds = usePlayer((s) => s.likedIds)
   const setShuffle = usePlayer((s) => s.setShuffle)
   const ids = useMemo(() => Object.keys(likedIds), [likedIds])
-  const [tracks, setTracks] = useState<any[]>([])
+  const [allTracks, setAllTracks] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const tracks = useExplicitFilter<any>(allTracks)
 
   useEffect(() => {
-    if (ids.length === 0) { setTracks([]); return }
+    if (ids.length === 0) { setAllTracks([]); return }
     setLoading(true)
     getCatalogSongsByIds(ids)
-      .then(setTracks)
-      .catch(() => setTracks([]))
+      .then(setAllTracks)
+      .catch(() => setAllTracks([]))
       .finally(() => setLoading(false))
   }, [ids.join(',')])
 

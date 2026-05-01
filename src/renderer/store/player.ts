@@ -1,5 +1,13 @@
 import { create } from 'zustand'
-import { getMusicKit, loveSong, unloveSong } from '../utils/musickit-api'
+import {
+  addToLibrary,
+  favoriteArtist,
+  getMusicKit,
+  loveSong,
+  unfavoriteArtist,
+  unloveSong,
+} from '../utils/musickit-api'
+import { toast } from './toast'
 
 export interface NowPlayingItem {
   id: string
@@ -11,6 +19,9 @@ export interface NowPlayingItem {
   albumName: string
   artworkUrl?: string
   durationMs: number
+  /** "explicit" | "clean" | undefined. Lets us pause/skip the current
+   *  track if the user toggles "Allow explicit content" off mid-playback. */
+  contentRating?: string
 }
 
 /**
@@ -108,6 +119,21 @@ interface PlayerState {
   sourceArtists: Record<string, string>
   sleepTimerMs: number | null
   likedIds: Record<string, boolean>
+  /**
+   * "Allow explicit content" preference. When false, every list in
+   * the app filters tracks/albums whose Apple `contentRating` is
+   * `'explicit'`, and the queue won't pick them up either. Persists
+   * under `settings.allowExplicit`.
+   */
+  allowExplicit: boolean
+  /**
+   * Catalog IDs of albums / artists / playlists the user has saved into
+   * their Apple Music library from inside Çatalify. Synced TO Apple via
+   * `addToLibrary()` and FROM Apple on every Library page load. Lets us
+   * render "Saved" / "Added" state instantly without re-fetching the
+   * library on every Album / Artist visit.
+   */
+  librarySaved: { albums: Record<string, boolean>; artists: Record<string, boolean> }
 
   setReady: (v: boolean) => void
   setAuthorized: (v: boolean) => void
@@ -122,6 +148,15 @@ interface PlayerState {
   setSleepTimer: (minutes: number | null) => void
   toggleLike: (id: string) => void
   setLiked: (map: Record<string, boolean>) => void
+  setAllowExplicit: (v: boolean) => void
+  /**
+   * Save / unsave a catalog item from the user's Apple Music library.
+   * Optimistic — local state flips immediately, the network call runs
+   * after; on failure the state is rolled back via the toast.
+   */
+  toggleLibraryAlbum: (id: string, albumSnapshot?: any) => Promise<void>
+  toggleLibraryArtist: (id: string) => Promise<void>
+  setLibrarySaved: (kind: 'albums' | 'artists', map: Record<string, boolean>) => void
   /**
    * Seed a fresh playback context after a MusicKit setQueue. `startId`
    * becomes `playbackQueue[0]`; the rest of the queue is derived from
@@ -191,6 +226,8 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   sourceArtists: {},
   sleepTimerMs: null,
   likedIds: {},
+  librarySaved: { albums: {}, artists: {} },
+  allowExplicit: true,
 
   setReady: (v) => set({ isReady: v }),
   setAuthorized: (v) => set({ isAuthorized: v }),
@@ -333,6 +370,114 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     )
   },
   setLiked: (map) => set({ likedIds: map }),
+  setAllowExplicit: (v) => {
+    set({ allowExplicit: v })
+    window.bombo.store.set('settings.allowExplicit', v)
+    // If the user just turned the filter OFF and the currently playing
+    // track is explicit, stop it. We pause rather than auto-skip — the
+    // queue beneath might be all explicit too, and silently chaining
+    // skips through 10 tracks would feel like the player broke. The
+    // toast tells them what happened so they can pick something else.
+    if (!v) {
+      const np = get().nowPlaying
+      if (np?.contentRating === 'explicit') {
+        try {
+          getMusicKit().pause()
+        } catch {}
+        toast.info(
+          'Paused',
+          `"${np.title}" is marked explicit. Pick another track or turn the setting back on.`,
+        )
+      }
+    }
+  },
+
+  toggleLibraryAlbum: async (id, albumSnapshot) => {
+    const current = get().librarySaved
+    if (current.albums[id]) {
+      // Removal needs the library-side ID (Apple's DELETE endpoint takes
+      // l.xxxxxxxx, not the catalog id) which means another round-trip
+      // we haven't wired yet. Tell the user where to do it for now.
+      toast.info(
+        'Already in library',
+        'Remove it from the official Apple Music app — direct removal isn\'t wired here yet.',
+      )
+      return
+    }
+    // Optimistic flip + persist
+    const next = {
+      ...current,
+      albums: { ...current.albums, [id]: true },
+    }
+    set({ librarySaved: next })
+    window.bombo.store.set('librarySaved', next)
+    try {
+      await addToLibrary('albums', id)
+      // Apple's /v1/me/library/albums response can lag 5–15 minutes
+      // behind a successful POST while their CDN cache reindexes. To
+      // bridge that window we stash the album snapshot locally; the
+      // Library page merges it on top of Apple's response, then Library
+      // dedupes once Apple finally surfaces the same id on its side.
+      if (albumSnapshot) {
+        const existing = (await window.bombo.store.get<any[]>(
+          'optimisticLibraryAlbums',
+        )) || []
+        const dedupe = existing.filter(
+          (a) => (a?.attributes?.playParams?.catalogId || a?.id) !== id,
+        )
+        const stamped = {
+          ...albumSnapshot,
+          attributes: {
+            ...albumSnapshot.attributes,
+            // Mark dateAdded NOW so the "Recent" sort puts it on top.
+            dateAdded: new Date().toISOString(),
+          },
+        }
+        window.bombo.store.set('optimisticLibraryAlbums', [stamped, ...dedupe])
+      }
+      toast.info('Added to library')
+    } catch (err) {
+      console.warn('addToLibrary albums failed', id, err)
+      // Roll back on failure
+      const rollback = { ...current }
+      set({ librarySaved: rollback })
+      window.bombo.store.set('librarySaved', rollback)
+      toast.error('Couldn\'t add to library', String((err as any)?.message ?? err))
+    }
+  },
+
+  toggleLibraryArtist: async (id) => {
+    const current = get().librarySaved
+    const wasFollowing = !!current.artists[id]
+    // Optimistic toggle — flip first, sync to Apple after. Apple's
+    // favorites endpoint is best-effort: if it fails we keep the local
+    // state anyway so the user's Profile / Following grid stay coherent
+    // with what they clicked. We only roll back on follow (not unfollow)
+    // failures since those are rarer and the user expectation is binary.
+    const nextArtists = { ...current.artists }
+    if (wasFollowing) delete nextArtists[id]
+    else nextArtists[id] = true
+    const next = { ...current, artists: nextArtists }
+    set({ librarySaved: next })
+    window.bombo.store.set('librarySaved', next)
+    try {
+      if (wasFollowing) await unfavoriteArtist(id)
+      else await favoriteArtist(id)
+      toast.info(wasFollowing ? 'Unfollowed artist' : 'Following artist')
+    } catch (err) {
+      // Best-effort: keep local state, just warn. The server might 404
+      // /v1/me/favorites on certain storefronts; we'd rather a user see
+      // their UI react than block on Apple's intermittent endpoint.
+      console.warn('[favorites] artist toggle failed (kept local state)', id, err)
+      toast.info(
+        wasFollowing ? 'Unfollowed (local only)' : 'Following (local only)',
+        'Apple sync skipped — this storefront may not support artist favorites.',
+      )
+    }
+  },
+
+  setLibrarySaved: (kind, map) =>
+    set({ librarySaved: { ...get().librarySaved, [kind]: map } }),
 
   play: async () => {
     try { await getMusicKit().play() } catch (e) { console.error(e) }

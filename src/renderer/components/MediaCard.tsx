@@ -66,8 +66,16 @@ export function MediaCard({ item, onPlay, roundedArtwork = false, size = 'md' }:
           </button>
         )}
       </div>
-      <div className={clsx('mt-3 truncate font-semibold text-white', size === 'lg' ? 'text-[14.5px]' : 'text-[13px]')}>
-        {title}
+      <div className={clsx('mt-3 truncate font-semibold text-white flex items-center gap-1.5', size === 'lg' ? 'text-[14.5px]' : 'text-[13px]')}>
+        <span className="truncate">{title}</span>
+        {attrs.contentRating === 'explicit' && (
+          <span
+            title="Explicit"
+            className="flex-shrink-0 inline-flex items-center justify-center w-[15px] h-[15px] rounded-[3px] bg-cream/15 text-cream/85 text-[9px] font-bold leading-none tracking-tight"
+          >
+            E
+          </span>
+        )}
       </div>
       {subtitle && (
         <div className="truncate text-[12px] text-obsidian-300 mt-0.5">
