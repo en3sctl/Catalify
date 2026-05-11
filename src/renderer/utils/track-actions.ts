@@ -16,6 +16,7 @@ import {
   playSongs,
   queuePlayLater,
   queuePlayNext,
+  resolveTrackTargets,
 } from './musickit-api'
 import { toast } from '../store/toast'
 
@@ -101,15 +102,48 @@ export function trackContextItems(
       type: 'item',
       label: 'Go to album',
       icon: Disc3,
-      onClick: () => opts.navigate(`/album/${albumId}`),
-      disabled: !albumId,
+      onClick: async () => {
+        if (albumId) {
+          opts.navigate(`/album/${albumId}`)
+          return
+        }
+        // Row didn't carry relationships (common for library tracks,
+        // search rows, un-enriched chart items). Fetch the catalog song
+        // with includes so the link still works without disabling it.
+        if (!catalogId || /^i\./i.test(catalogId)) {
+          toast.error('Album unavailable', 'No catalog reference on this track.')
+          return
+        }
+        const resolved = await resolveTrackTargets(catalogId)
+        if (resolved.albumId) {
+          opts.navigate(`/album/${resolved.albumId}`)
+        } else {
+          toast.error('Album unavailable', "Apple didn't return an album for this track.")
+        }
+      },
+      disabled: !catalogId,
     },
     {
       type: 'item',
       label: 'Go to artist',
       icon: User,
-      onClick: () => opts.navigate(`/artist/${artistId}`),
-      disabled: !artistId,
+      onClick: async () => {
+        if (artistId) {
+          opts.navigate(`/artist/${artistId}`)
+          return
+        }
+        if (!catalogId || /^i\./i.test(catalogId)) {
+          toast.error('Artist unavailable', 'No catalog reference on this track.')
+          return
+        }
+        const resolved = await resolveTrackTargets(catalogId)
+        if (resolved.artistId) {
+          opts.navigate(`/artist/${resolved.artistId}`)
+        } else {
+          toast.error('Artist unavailable', "Apple didn't return an artist for this track.")
+        }
+      },
+      disabled: !catalogId,
     },
     { type: 'separator' },
     {

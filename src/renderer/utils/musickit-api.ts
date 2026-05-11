@@ -464,6 +464,39 @@ export async function getCatalogSongsByIds(ids: string[]) {
   return res.data.data
 }
 
+/**
+ * Resolve {albumId, artistId} for a single catalog song. The context-menu
+ * "Go to album" / "Go to artist" links need these IDs, but Apple omits
+ * relationships from a lot of endpoints (search rows, library tracks,
+ * un-enriched chart results), leaving the row data without them. Calling
+ * this on demand keeps the row payload small while still letting both
+ * buttons work everywhere.
+ */
+export async function resolveTrackTargets(
+  catalogSongId: string,
+): Promise<{ albumId?: string; artistId?: string }> {
+  if (!catalogSongId || /^i\./i.test(catalogSongId)) return {}
+  try {
+    const mk = getMusicKit()
+    const sf = await storefront()
+    const res = await mk.api.music(`/v1/catalog/${sf}/songs/${catalogSongId}`, {
+      include: 'artists,albums',
+    })
+    const song = res.data?.data?.[0]
+    const albumId =
+      song?.relationships?.albums?.data?.[0]?.id ||
+      song?.attributes?.playParams?.albumId
+    const artistId = song?.relationships?.artists?.data?.[0]?.id
+    return {
+      albumId: albumId ? String(albumId) : undefined,
+      artistId: artistId ? String(artistId) : undefined,
+    }
+  } catch (err) {
+    console.warn('[resolveTrackTargets] failed', err)
+    return {}
+  }
+}
+
 export async function getCatalogArtistsByIds(ids: string[]): Promise<any[]> {
   if (ids.length === 0) return []
   const mk = getMusicKit()
