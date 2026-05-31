@@ -39,8 +39,7 @@ export function Album() {
       ? attrs.artistUrl.match(/\/artist\/[^/]+\/(\d+)/)?.[1]
       : undefined)
 
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
-  const shuffle = usePlayer((s) => s.shuffle)
+  const setShuffle = usePlayer((s) => s.setShuffle)
 
   if (loading) {
     return <div className="text-obsidian-400">Loading…</div>
@@ -90,17 +89,23 @@ export function Album() {
           </div>
           <div className="mt-4 flex gap-3">
             <button
-              onClick={() => playFromHere(0).catch(console.error)}
+              onClick={() => {
+                // Play = in order. Make the toggle authoritative so the
+                // bottom-bar shuffle icon reflects the choice.
+                setShuffle(false)
+                playFromHere(0).catch(console.error)
+              }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full accent-bg text-obsidian-950 font-semibold hover:brightness-110 transition shadow-glow"
             >
               <Play size={16} fill="currentColor" /> Play
             </button>
             <button
-              onClick={async () => {
-                toggleShuffle()
-                try {
-                  await playFromHere(0)
-                } catch (e) { console.error(e) }
+              onClick={() => {
+                // Shuffle = always shuffle, starting on a RANDOM track.
+                setShuffle(true)
+                const startAt =
+                  tracks.length > 0 ? Math.floor(Math.random() * tracks.length) : 0
+                playFromHere(startAt).catch(console.error)
               }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-white hover:bg-white/[0.1] transition"
             >

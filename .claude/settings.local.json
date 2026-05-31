@@ -10,7 +10,9 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('sources:',JSON.stringify\\(j.sources,null,2\\)\\);console.log\\('sourceRoot:',j.sourceRoot\\)}catch\\(e\\){console.log\\('parse err',e.message\\)}}\\)\")",
       "Bash(node -e ' *)",
       "Bash(npx vite *)",
-      "Bash(echo \"=== tsc exit: $? ===\")"
+      "Bash(echo \"=== tsc exit: $? ===\")",
+      "Bash(sed -n '40,60p' src/renderer/pages/Artist.tsx)",
+      "Bash(sed -n '24,45p' src/renderer/pages/Liked.tsx)"
     ]
   }
 }

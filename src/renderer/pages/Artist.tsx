@@ -40,13 +40,15 @@ export function Artist() {
 
   const playTop = () => {
     if (topSongs.length === 0) return
+    setShuffle(false)
     playSongs(topSongs.map((s) => s.id), 0).catch(console.error)
   }
   const shuffleTop = async () => {
     if (topSongs.length === 0) return
     try {
       setShuffle(true)
-      await playSongs(topSongs.map((s) => s.id), 0)
+      const startAt = Math.floor(Math.random() * topSongs.length)
+      await playSongs(topSongs.map((s) => s.id), startAt)
     } catch (e) { console.error(e) }
   }
 

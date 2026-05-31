@@ -24,13 +24,15 @@ export function Liked() {
 
   const playAll = () => {
     if (tracks.length === 0) return
+    setShuffle(false)
     playSongs(tracks.map((t) => t.id), 0).catch(console.error)
   }
   const shuffleAll = async () => {
     if (tracks.length === 0) return
     try {
       setShuffle(true)
-      await playSongs(tracks.map((t) => t.id), 0)
+      const startAt = Math.floor(Math.random() * tracks.length)
+      await playSongs(tracks.map((t) => t.id), startAt)
     } catch (e) { console.error(e) }
   }
 

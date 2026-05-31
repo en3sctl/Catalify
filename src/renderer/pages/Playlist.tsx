@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Play, Shuffle } from 'lucide-react'
 import {
+  addToLibraryPlaylist,
   getLibraryPlaylist,
   getPlaylist,
   isLibraryId,
@@ -9,16 +10,20 @@ import {
 } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
+import { PlaylistSongAdder, AdderTrack } from '../components/PlaylistSongAdder'
 import { artworkUrl } from '../utils/format'
 import { useExplicitFilter } from '../utils/explicit'
 import { useLocalPlaylistCover } from '../utils/playlist-covers'
 import { usePlayer } from '../store/player'
+import { toast } from '../store/toast'
 
 export function Playlist() {
   const { id } = useParams<{ id: string }>()
   const [playlist, setPlaylist] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const toggleShuffle = usePlayer((s) => s.toggleShuffle)
+  // Songs added on this page after load (optimistic — Apple's list lags).
+  const [extraTracks, setExtraTracks] = useState<any[]>([])
+  const setShuffle = usePlayer((s) => s.setShuffle)
 
   // Library playlists (user-created, "p.xxx" / "pl.u-xxx") only resolve
   // through the library endpoint — the catalog endpoint 404s on them.
@@ -27,6 +32,7 @@ export function Playlist() {
   useEffect(() => {
     if (!id) return
     setLoading(true)
+    setExtraTracks([])
     const fetcher = isLibrary ? getLibraryPlaylist : getPlaylist
     fetcher(id)
       .then(setPlaylist)
@@ -34,12 +40,42 @@ export function Playlist() {
       .finally(() => setLoading(false))
   }, [id, isLibrary])
 
-  const allTracks = useMemo(() => playlist?.relationships?.tracks?.data ?? [], [playlist])
+  const fetchedTracks = useMemo(
+    () => playlist?.relationships?.tracks?.data ?? [],
+    [playlist],
+  )
+  const allTracks = useMemo(
+    () => [...fetchedTracks, ...extraTracks],
+    [fetchedTracks, extraTracks],
+  )
   const tracks = useExplicitFilter<any>(allTracks)
   const attrs = playlist?.attributes ?? {}
   // A locally-uploaded cover (set on the create page) wins over Apple's art.
   const localCover = useLocalPlaylistCover(id)
   const artLarge = localCover ?? artworkUrl(attrs.artwork?.url, 600)
+
+  // Only the user's own library playlists can take new songs. Apple marks
+  // these with attributes.canEdit; treat a missing flag on a library id as
+  // editable (user-created playlists predate the flag on some storefronts).
+  const editable = isLibrary && attrs.canEdit !== false
+
+  const existingIds = useMemo(
+    () =>
+      tracks
+        .map((t: any) => String(t?.attributes?.playParams?.catalogId || t?.id || ''))
+        .filter(Boolean),
+    [tracks],
+  )
+  const seedArtistIds = useMemo(
+    () =>
+      tracks
+        .map(
+          (t: any) =>
+            t?.relationships?.artists?.data?.[0]?.id || t?.attributes?.artistId,
+        )
+        .filter(Boolean) as string[],
+    [tracks],
+  )
 
   if (loading) return <div className="text-obsidian-400">Loading…</div>
   if (!playlist) return <div className="text-obsidian-400">Playlist not found.</div>
@@ -59,6 +95,20 @@ export function Playlist() {
     return playSongs(ids, startAt, artistMap)
   }
 
+  const onAddSong = async (track: AdderTrack, raw: any) => {
+    if (!id) return
+    // Optimistic: show it in the list right away.
+    setExtraTracks((cur) => (cur.some((t) => t.id === raw.id) ? cur : [...cur, raw]))
+    try {
+      await addToLibraryPlaylist(id, [track.id])
+      toast.info('Added to playlist', `"${track.title}"`)
+    } catch (err: any) {
+      // Roll back the optimistic row on failure.
+      setExtraTracks((cur) => cur.filter((t) => t.id !== raw.id))
+      toast.error('Couldn\'t add song', err?.message || String(err))
+    }
+  }
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col md:flex-row gap-6 items-end">
@@ -72,17 +122,23 @@ export function Playlist() {
           <div className="mt-2 text-obsidian-400 text-sm">{tracks.length} songs · {attrs.curatorName ?? ''}</div>
           <div className="mt-4 flex gap-3">
             <button
-              onClick={() => playFromHere(0).catch(console.error)}
+              onClick={() => {
+                // Play = in order. Make the toggle authoritative so the
+                // bottom-bar shuffle icon reflects the choice.
+                setShuffle(false)
+                playFromHere(0).catch(console.error)
+              }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full accent-bg text-obsidian-950 font-semibold hover:brightness-110 transition shadow-glow"
             >
               <Play size={16} fill="currentColor" /> Play
             </button>
             <button
-              onClick={async () => {
-                toggleShuffle()
-                try {
-                  await playFromHere(0)
-                } catch (e) { console.error(e) }
+              onClick={() => {
+                // Shuffle = always shuffle, starting on a RANDOM track.
+                setShuffle(true)
+                const startAt =
+                  tracks.length > 0 ? Math.floor(Math.random() * tracks.length) : 0
+                playFromHere(startAt).catch(console.error)
               }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-white hover:bg-white/[0.1] transition"
             >
@@ -102,6 +158,17 @@ export function Playlist() {
           />
         ))}
       </div>
+
+      {/* Add more songs later — only for the user's own library playlists. */}
+      {editable && (
+        <div className="pt-8 border-t border-white/[0.05]">
+          <PlaylistSongAdder
+            existingIds={existingIds}
+            seedArtistIds={seedArtistIds}
+            onAdd={onAddSong}
+          />
+        </div>
+      )}
     </div>
   )
 }
