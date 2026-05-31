@@ -11,6 +11,7 @@ import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl } from '../utils/format'
 import { useExplicitFilter } from '../utils/explicit'
+import { useLocalPlaylistCover } from '../utils/playlist-covers'
 import { usePlayer } from '../store/player'
 
 export function Playlist() {
@@ -36,7 +37,9 @@ export function Playlist() {
   const allTracks = useMemo(() => playlist?.relationships?.tracks?.data ?? [], [playlist])
   const tracks = useExplicitFilter<any>(allTracks)
   const attrs = playlist?.attributes ?? {}
-  const artLarge = artworkUrl(attrs.artwork?.url, 600)
+  // A locally-uploaded cover (set on the create page) wins over Apple's art.
+  const localCover = useLocalPlaylistCover(id)
+  const artLarge = localCover ?? artworkUrl(attrs.artwork?.url, 600)
 
   if (loading) return <div className="text-obsidian-400">Loading…</div>
   if (!playlist) return <div className="text-obsidian-400">Playlist not found.</div>

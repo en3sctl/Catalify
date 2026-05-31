@@ -23,6 +23,7 @@ import { usePlayer } from '../store/player'
 import { Waveform } from '../components/Waveform'
 import { LyricsPanel } from '../components/LyricsPanel'
 import { QueueDrawer } from '../components/QueueDrawer'
+import { VolumeSlider } from '../components/VolumeSlider'
 import { artworkUrl, clsx } from '../utils/format'
 
 /**
@@ -380,27 +381,9 @@ function VolumeChip({
   volume: number
   onChange: (v: number) => void
 }) {
-  const muted = volume === 0
-  const Icon = muted ? VolumeX : volume < 0.35 ? Volume1 : Volume2
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] backdrop-blur-xl">
-      <button
-        onClick={() => onChange(muted ? 0.7 : 0)}
-        className="text-white/80 hover:text-white transition"
-        title={muted ? 'Unmute' : 'Mute'}
-      >
-        <Icon size={15} />
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={volume}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-24 accent-white/80 cursor-pointer"
-        aria-label="Volume"
-      />
+    <div className="flex items-center px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] backdrop-blur-xl">
+      <VolumeSlider volume={volume} onChange={onChange} width={96} />
     </div>
   )
 }

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
 import {
+  Camera,
   ChevronLeft,
   GripVertical,
   Music,
@@ -13,24 +14,30 @@ import {
 import {
   createLibraryPlaylist,
   getArtist,
+  getCharts,
   getHeavyRotation,
   search as catalogSearch,
 } from '../utils/musickit-api'
 import { toast } from '../store/toast'
 import { artworkUrl, clsx, formatDuration } from '../utils/format'
+import { resizeImageToDataUrl } from '../utils/image'
+import { setPlaylistCover } from '../utils/playlist-covers'
 
 /**
  * Full-page playlist editor — no modal dialog. Flow:
  *   1. Name + description at the top (big typography, feels like an
- *      Apple Music / Spotify playlist header).
+ *      Apple Music / Spotify playlist header). The cover is a custom
+ *      photo if the user uploads one, else a 2×2 mosaic of track art.
  *   2. "Add songs" search with inline results the user clicks to add.
- *   3. Track list (drag-reorder + remove) same Reorder.Group pattern
+ *   3. Track list (drag-reorder + remove) — same Reorder.Group pattern
  *      used by the queue drawer.
- *   4. Suggestions rail below — pulled from the first-added artist's
- *      top songs, falling back to heavy rotation. Click "+" to add a
- *      suggestion; the list refreshes so there's always something new.
- *   5. Save commits everything in one MusicKit call, toasts, and
- *      navigates to the library.
+ *   4. "Recommended" feed (Spotify-style): one-click "+" to add, "×" to
+ *      skip — either way the card is replaced by a fresh suggestion.
+ *      Suggestions are seeded off the artists of the songs already added
+ *      (falling back to the storefront charts / heavy rotation), so they
+ *      stay relevant and in the right language.
+ *   5. Save commits everything in one MusicKit call, stores the local
+ *      cover (Apple's API can't set custom artwork), toasts, navigates.
  */
 export function NewPlaylist() {
   const navigate = useNavigate()
@@ -44,7 +51,16 @@ export function NewPlaylist() {
   const [searchResults, setSearchResults] = useState<TrackModel[]>([])
   const [searching, setSearching] = useState(false)
 
-  const [suggestions, setSuggestions] = useState<TrackModel[]>([])
+  // Recommendation feed: a POOL of candidates; we render the first few and
+  // top it up as the user adds/skips. `seenRef` remembers every id the user
+  // has added or skipped so it never resurfaces.
+  const [recPool, setRecPool] = useState<TrackModel[]>([])
+  const seenRef = useRef<Set<string>>(new Set())
+  const refillingRef = useRef(false)
+
+  // Custom cover photo (local-only — Apple's API can't set playlist art).
+  const [coverDataUrl, setCoverDataUrl] = useState<string | null>(null)
+  const coverInputRef = useRef<HTMLInputElement>(null)
 
   const searchDebounceRef = useRef<number | null>(null)
 
@@ -74,48 +90,70 @@ export function NewPlaylist() {
     }
   }, [searchTerm])
 
-  // Suggestions: seed on the last track's artist if we have any, else
-  // fall back to the user's heavy rotation.
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const seed = tracks[tracks.length - 1]
-      try {
-        if (seed?.artistId) {
-          const artist = await getArtist(seed.artistId)
-          const views = artist?.views?.['top-songs']?.data ?? []
-          const addedIds = new Set(tracks.map((t) => t.id))
-          const picks = views
-            .map(toTrackModel)
-            .filter((t: TrackModel) => !addedIds.has(t.id))
-            .slice(0, 5)
-          if (!cancelled && picks.length > 0) {
-            setSuggestions(picks)
-            return
-          }
+  // Build/extend the recommendation pool. Seeds off the artists of the most
+  // recently added tracks first (relevant + same-language), then tops up
+  // from storefront charts and heavy rotation.
+  const refillSuggestions = useCallback(async () => {
+    if (refillingRef.current) return
+    refillingRef.current = true
+    try {
+      const exclude = new Set<string>(seenRef.current)
+      tracks.forEach((t) => exclude.add(t.id))
+      const fresh: TrackModel[] = []
+      const pushUnique = (tm: TrackModel) => {
+        if (tm.id && !exclude.has(tm.id)) {
+          exclude.add(tm.id)
+          fresh.push(tm)
         }
-        const rotation = await getHeavyRotation(20)
-        const addedIds = new Set(tracks.map((t) => t.id))
-        const picks: TrackModel[] = []
-        for (const item of rotation) {
-          // Heavy-rotation items are albums/playlists — drill for their
-          // first song so we can actually add a track, not an album.
-          const firstSong = item?.relationships?.tracks?.data?.[0]
-          if (firstSong) {
-            const tm = toTrackModel(firstSong)
-            if (tm.id && !addedIds.has(tm.id)) picks.push(tm)
-          }
-          if (picks.length >= 5) break
-        }
-        if (!cancelled) setSuggestions(picks)
-      } catch (e) {
-        if (!cancelled) setSuggestions([])
       }
-    })()
-    return () => {
-      cancelled = true
+
+      // 1) Seed off the artists of the last few added tracks.
+      const seedArtists = [
+        ...new Set(tracks.slice(-3).map((t) => t.artistId).filter(Boolean)),
+      ] as string[]
+      for (const aid of seedArtists) {
+        try {
+          const artist = await getArtist(aid)
+          const top = artist?.views?.['top-songs']?.data ?? []
+          for (const s of top) pushUnique(toTrackModel(s))
+        } catch {}
+        if (fresh.length >= 12) break
+      }
+
+      // 2) Top up from storefront charts (language-appropriate) …
+      if (fresh.length < 8) {
+        try {
+          const { songs } = await getCharts(['songs'], 30)
+          for (const s of songs) pushUnique(toTrackModel(s))
+        } catch {}
+      }
+      // 3) … and finally heavy rotation (drill the first song of each item).
+      if (fresh.length < 8) {
+        try {
+          const rotation = await getHeavyRotation(20)
+          for (const item of rotation) {
+            const firstSong = item?.relationships?.tracks?.data?.[0]
+            if (firstSong) pushUnique(toTrackModel(firstSong))
+          }
+        } catch {}
+      }
+
+      if (fresh.length > 0) {
+        setRecPool((cur) => {
+          const have = new Set(cur.map((t) => t.id))
+          return [...cur, ...fresh.filter((t) => !have.has(t.id))]
+        })
+      }
+    } finally {
+      refillingRef.current = false
     }
-  }, [tracks.length, tracks[tracks.length - 1]?.artistId])
+  }, [tracks])
+
+  // Keep the pool stocked. Re-runs when it drains or when the seed (added
+  // tracks) changes so newly-added artists steer the suggestions.
+  useEffect(() => {
+    if (recPool.length < 6) refillSuggestions()
+  }, [recPool.length, tracks.length, refillSuggestions])
 
   const addTrack = (t: TrackModel) => {
     if (!t.id) return
@@ -127,6 +165,31 @@ export function NewPlaylist() {
     setTracks((cur) => cur.filter((t) => t.id !== id))
   }
 
+  const addSuggestion = (t: TrackModel) => {
+    seenRef.current.add(t.id)
+    addTrack(t)
+    setRecPool((cur) => cur.filter((x) => x.id !== t.id))
+  }
+
+  const skipSuggestion = (t: TrackModel) => {
+    seenRef.current.add(t.id)
+    setRecPool((cur) => cur.filter((x) => x.id !== t.id))
+  }
+
+  const onPickCover = () => coverInputRef.current?.click()
+  const onCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    try {
+      const dataUrl = await resizeImageToDataUrl(file, 600, true)
+      setCoverDataUrl(dataUrl)
+    } catch (err) {
+      console.warn('[new-playlist] cover resize failed', err)
+      toast.error('Couldn\'t load that image', 'Try a different photo.')
+    }
+  }
+
   const save = async () => {
     if (!name.trim()) {
       toast.error('Name required', 'Give your playlist a name first.')
@@ -135,14 +198,47 @@ export function NewPlaylist() {
     setBusy(true)
     try {
       const ids = tracks.map((t) => t.id).filter(Boolean)
-      await createLibraryPlaylist(name.trim(), description.trim() || undefined, ids)
-      // Apple's library index typically takes ~1-2 s to reflect a new
-      // playlist. If we navigate immediately the Library grid's fetch
-      // runs before the write lands and shows "Nothing here yet". Wait
-      // briefly, then navigate — by the time Library mounts and fetches
-      // the list includes the new playlist.
+      const playlist = await createLibraryPlaylist(
+        name.trim(),
+        description.trim() || undefined,
+        ids,
+      )
+      const newId = playlist?.id ? String(playlist.id) : ''
+      // Persist the custom cover locally, keyed by the new library playlist
+      // id (Apple's API can't store custom playlist artwork).
+      if (coverDataUrl && newId) {
+        try {
+          await setPlaylistCover(newId, coverDataUrl)
+        } catch (err) {
+          console.warn('[new-playlist] cover save failed', err)
+        }
+      }
+      // Apple's /v1/me/library/playlists list can lag minutes behind a
+      // successful POST while their index reindexes — exactly like albums.
+      // Stash an optimistic snapshot so the Library/Home merge it on top
+      // immediately and drop it once Apple finally returns the same id.
+      if (newId) {
+        try {
+          const existing =
+            (await window.bombo.store.get<any[]>('optimisticLibraryPlaylists')) || []
+          const dedupe = existing.filter((p) => String(p?.id) !== newId)
+          const snapshot = {
+            id: newId,
+            type: 'library-playlists',
+            attributes: {
+              name: name.trim(),
+              dateAdded: new Date().toISOString(),
+              canEdit: true,
+              playParams: { id: newId, kind: 'playlist', isLibrary: true },
+            },
+          }
+          await window.bombo.store.set('optimisticLibraryPlaylists', [snapshot, ...dedupe])
+        } catch (err) {
+          console.warn('[new-playlist] optimistic stash failed', err)
+        }
+      }
       toast.success('Playlist created', `"${name.trim()}" — updating your library…`)
-      await new Promise((r) => setTimeout(r, 1500))
+      await new Promise((r) => setTimeout(r, 800))
       navigate('/library')
     } catch (err: any) {
       toast.error('Failed to create playlist', err?.message || String(err))
@@ -155,6 +251,8 @@ export function NewPlaylist() {
     () => tracks.reduce((sum, t) => sum + (t.durationMs || 0), 0),
     [tracks],
   )
+
+  const visibleSuggestions = recPool.slice(0, 6)
 
   return (
     <div className="space-y-8 pb-16">
@@ -169,7 +267,19 @@ export function NewPlaylist() {
       </div>
 
       <div className="flex items-end gap-6 flex-wrap">
-        <PlaylistCoverMosaic tracks={tracks} />
+        <PlaylistCoverMosaic
+          tracks={tracks}
+          coverDataUrl={coverDataUrl}
+          onPickCover={onPickCover}
+          onClearCover={() => setCoverDataUrl(null)}
+        />
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          onChange={onCoverChange}
+          className="hidden"
+        />
         <div className="flex-1 min-w-[280px] space-y-3">
           <div className="text-[11px] uppercase tracking-[0.2em] accent-text font-medium">
             Playlist
@@ -291,27 +401,37 @@ export function NewPlaylist() {
         </AnimatePresence>
       </section>
 
-      {/* ── Suggestions ── */}
-      {suggestions.length > 0 && (
+      {/* ── Recommended (Spotify-style add / skip feed) ── */}
+      {visibleSuggestions.length > 0 && (
         <section>
           <SectionTitle
-            title="Suggestions"
+            title="Recommended"
             subtitle={
               tracks.length > 0
-                ? 'More from the same vibe'
-                : 'Based on what you listen to lately'
+                ? 'More like what you added — add or skip'
+                : 'Based on what you listen to — add or skip'
             }
             icon={<Sparkles size={14} className="accent-text" />}
           />
-          <div className="flex flex-col divide-y divide-white/[0.03]">
-            {suggestions.map((t) => (
-              <SearchResultRow
-                key={t.id}
-                track={t}
-                added={tracks.some((x) => x.id === t.id)}
-                onAdd={() => addTrack(t)}
-              />
-            ))}
+          <div className="rounded-2xl border border-white/[0.06] divide-y divide-white/[0.04] overflow-hidden">
+            <AnimatePresence initial={false}>
+              {visibleSuggestions.map((t) => (
+                <motion.div
+                  key={t.id}
+                  layout
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <SuggestionRow
+                    track={t}
+                    onAdd={() => addSuggestion(t)}
+                    onSkip={() => skipSuggestion(t)}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
         </section>
       )}
@@ -342,36 +462,73 @@ function SectionTitle({
 }
 
 /**
- * 2×2 mosaic of the first four added tracks' cover art, so the
- * playlist cover reflects its contents Apple Music-style. When empty,
- * an accent gradient placeholder stands in.
+ * Playlist cover. A user-uploaded photo wins; otherwise a 2×2 mosaic of the
+ * first four added tracks' art (Apple Music-style), or an accent gradient
+ * placeholder when empty. Hovering reveals an "upload cover" affordance.
  */
-function PlaylistCoverMosaic({ tracks }: { tracks: TrackModel[] }) {
+function PlaylistCoverMosaic({
+  tracks,
+  coverDataUrl,
+  onPickCover,
+  onClearCover,
+}: {
+  tracks: TrackModel[]
+  coverDataUrl: string | null
+  onPickCover: () => void
+  onClearCover: () => void
+}) {
   const arts = tracks.slice(0, 4).map((t) => t.artworkUrl).filter(Boolean) as string[]
-  if (arts.length === 0) {
-    return (
-      <div className="w-[220px] h-[220px] rounded-2xl flex items-center justify-center flex-shrink-0 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.7)]"
-           style={{
-             background:
-               'linear-gradient(135deg, rgb(var(--accent) / 0.75) 0%, rgb(var(--accent-soft) / 0.65) 100%)',
-           }}>
+
+  let inner: React.ReactNode
+  if (coverDataUrl) {
+    inner = <img src={coverDataUrl} alt="" className="w-full h-full object-cover" draggable={false} />
+  } else if (arts.length === 0) {
+    inner = (
+      <div
+        className="w-full h-full flex items-center justify-center"
+        style={{
+          background:
+            'linear-gradient(135deg, rgb(var(--accent) / 0.75) 0%, rgb(var(--accent-soft) / 0.65) 100%)',
+        }}
+      >
         <Music size={56} className="text-obsidian-950/70" />
       </div>
     )
-  }
-  if (arts.length < 4) {
-    const img = arts[0]
-    return (
-      <div className="w-[220px] h-[220px] rounded-2xl overflow-hidden flex-shrink-0 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.7)]">
-        <img src={img} alt="" className="w-full h-full object-cover" draggable={false} />
+  } else if (arts.length < 4) {
+    inner = <img src={arts[0]} alt="" className="w-full h-full object-cover" draggable={false} />
+  } else {
+    inner = (
+      <div className="w-full h-full grid grid-cols-2 grid-rows-2">
+        {arts.map((src, i) => (
+          <img key={i} src={src} alt="" className="w-full h-full object-cover" draggable={false} />
+        ))}
       </div>
     )
   }
+
   return (
-    <div className="w-[220px] h-[220px] rounded-2xl overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.7)]">
-      {arts.map((src, i) => (
-        <img key={i} src={src} alt="" className="w-full h-full object-cover" draggable={false} />
-      ))}
+    <div className="group relative w-[220px] h-[220px] rounded-2xl overflow-hidden flex-shrink-0 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.7)]">
+      {inner}
+      {/* Hover overlay: pick / replace cover */}
+      <button
+        onClick={onPickCover}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white opacity-0 group-hover:opacity-100 transition"
+        title={coverDataUrl ? 'Replace cover' : 'Add a cover photo'}
+      >
+        <Camera size={26} />
+        <span className="text-[12px] font-medium">
+          {coverDataUrl ? 'Replace cover' : 'Add cover photo'}
+        </span>
+      </button>
+      {coverDataUrl && (
+        <button
+          onClick={onClearCover}
+          className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center bg-black/55 text-white/85 hover:text-white hover:bg-black/75 opacity-0 group-hover:opacity-100 transition"
+          title="Remove cover"
+        >
+          <X size={14} />
+        </button>
+      )}
     </div>
   )
 }
@@ -467,6 +624,56 @@ function SearchResultRow({
         title={added ? 'Already added' : 'Add'}
       >
         {added ? <Music size={13} /> : <Plus size={14} />}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * A recommendation row with TWO actions: add (+) commits the song to the
+ * playlist, skip (×) dismisses it. Either way the parent replaces the card
+ * with the next pooled suggestion.
+ */
+function SuggestionRow({
+  track,
+  onAdd,
+  onSkip,
+}: {
+  track: TrackModel
+  onAdd: () => void
+  onSkip: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 hover:bg-white/[0.03] transition">
+      <img
+        src={track.artworkUrl ?? ''}
+        alt=""
+        draggable={false}
+        className="w-10 h-10 rounded bg-obsidian-800 object-cover flex-shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13.5px] font-medium text-cream">{track.title}</div>
+        <div className="truncate text-[12px] text-obsidian-300">
+          {track.artistName}
+          {track.albumName && <span className="text-obsidian-400"> · {track.albumName}</span>}
+        </div>
+      </div>
+      <div className="text-[12px] text-obsidian-400 font-mono tabular-nums flex-shrink-0">
+        {formatDuration(track.durationMs)}
+      </div>
+      <button
+        onClick={onSkip}
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-obsidian-400 hover:text-white hover:bg-white/[0.06] transition"
+        title="Not interested — skip"
+      >
+        <X size={15} />
+      </button>
+      <button
+        onClick={onAdd}
+        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-white/[0.06] text-white hover:bg-cream hover:text-obsidian-950 transition"
+        title="Add to playlist"
+      >
+        <Plus size={14} />
       </button>
     </div>
   )

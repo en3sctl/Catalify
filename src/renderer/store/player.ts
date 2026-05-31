@@ -3,6 +3,7 @@ import {
   addToLibrary,
   favoriteArtist,
   getMusicKit,
+  getRadioContinuation,
   loveSong,
   unfavoriteArtist,
   unloveSong,
@@ -72,6 +73,14 @@ export function smartShuffle(ids: string[], artistMap?: Record<string, string>):
 let navInFlight = false
 let navLastAt = 0
 const NAV_COOLDOWN_MS = 120
+
+// Guards the radio continuation refill so overlapping triggers (track
+// start + track end firing close together) can't double-fetch.
+let extendInFlight = false
+// How many tracks should remain "up next" before we top the queue up with
+// a same-vibe radio continuation. Keeping a small buffer ahead means the
+// hand-off is seamless and we never hit genuine dead air at track-end.
+const QUEUE_REFILL_THRESHOLD = 2
 
 async function setQueueWithTimeout(mk: any, songId: string, timeoutMs = 5000): Promise<void> {
   await Promise.race([
@@ -170,6 +179,15 @@ interface PlayerState {
    * update already aligned things.
    */
   advanceToTrack: (newId: string) => void
+  /**
+   * "Keep the flow going" — when the explicit queue is about to run dry,
+   * top it up with same-vibe songs seeded off the CURRENT track's artist
+   * (and similar artists). Replaces reliance on MusicKit's opaque autoplay,
+   * which intermittently played nothing and drifted to the wrong language.
+   * Cheap no-op while enough tracks are still queued, while repeat is on,
+   * or while a refill is already in flight.
+   */
+  extendQueue: () => Promise<void>
 
   play: () => Promise<void>
   pause: () => Promise<void>
@@ -353,6 +371,56 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     })
   },
 
+  extendQueue: async () => {
+    if (extendInFlight) return
+    const state = get()
+    const { playbackQueue, repeat, originalPlaylist, playedIds, nowPlaying } = state
+    // Don't radio-continue while looping — repeat 'all' re-seeds the source
+    // and repeat 'one' replays the track; both own "what plays next".
+    if (repeat !== 'none') return
+    // No tracked source pool means a MusicKit station/radio is driving
+    // playback (playStation clears originalPlaylist). Leave it alone — the
+    // station streams its own continuation; injecting ours would hijack it.
+    if (originalPlaylist.length === 0) return
+    // Enough already queued ahead of the current track — nothing to do.
+    const upNext = playbackQueue.length - 1
+    if (upNext > QUEUE_REFILL_THRESHOLD) return
+    // Seed off whatever is playing right now. Library-only ids (i.xxx) can't
+    // seed a catalog station, so bail and let MusicKit autoplay cover them.
+    const seedId = playbackQueue[0]?.id ?? nowPlaying?.id ?? null
+    if (!seedId || /^i\./i.test(seedId)) return
+
+    extendInFlight = true
+    try {
+      const exclude = new Set<string>([
+        ...playbackQueue.map((it) => it.id),
+        ...playedIds,
+        ...originalPlaylist,
+      ])
+      const { ids, artistNames } = await getRadioContinuation(
+        seedId,
+        nowPlaying?.artistId,
+        exclude,
+      )
+      if (ids.length === 0) return
+      // Re-read state — the user may have changed tracks during the fetch.
+      const cur = get()
+      const have = new Set(cur.playbackQueue.map((it) => it.id))
+      const fresh = ids.filter((id) => !have.has(id))
+      if (fresh.length === 0) return
+      set({
+        playbackQueue: [...cur.playbackQueue, ...fresh.map((id) => ({ id }))],
+        // Extend the source pool too so shuffle/repeat rebuilds keep these.
+        originalPlaylist: [...cur.originalPlaylist, ...fresh],
+        sourceArtists: { ...cur.sourceArtists, ...artistNames },
+      })
+    } catch (err) {
+      console.warn('[extendQueue] failed', err)
+    } finally {
+      extendInFlight = false
+    }
+  },
+
   setSleepTimer: (minutes) => {
     const at = minutes ? Date.now() + minutes * 60_000 : null
     set({ sleepTimerMs: at })
@@ -533,6 +601,24 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         await setQueueWithTimeout(mk, head, 6000)
         await mk.play().catch(() => {})
         return
+      }
+
+      // Single-item queue, no loop — try a same-vibe radio continuation
+      // seeded off the current track before deferring to MusicKit.
+      if (playbackQueue.length <= 1 && repeat === 'none') {
+        await get().extendQueue()
+        const q = get().playbackQueue
+        if (q.length > 1) {
+          const [oldHead, ...rest] = q
+          const nextHead = rest[0]
+          set({
+            playbackQueue: rest,
+            playedIds: oldHead ? [...get().playedIds, oldHead.id] : get().playedIds,
+          })
+          await setQueueWithTimeout(mk, nextHead.id, 6000)
+          await mk.play().catch(() => {})
+          return
+        }
       }
 
       // Nothing queued — let MusicKit (station/autoplay) try.

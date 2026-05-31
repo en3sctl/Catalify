@@ -20,6 +20,7 @@ import {
 } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { artworkUrl, clsx } from '../utils/format'
+import { resizeImageToDataUrl } from '../utils/image'
 import { Link } from 'react-router-dom'
 
 /**
@@ -357,21 +358,3 @@ function Stat({
   return content
 }
 
-/**
- * Read a user-picked image and return a square-ish JPEG data URL no
- * larger than `max` per side. Keeps electron-store payloads under a
- * few hundred KB even if the user picks a 4K avatar source.
- */
-async function resizeImageToDataUrl(file: File, max: number): Promise<string> {
-  const bitmap = await createImageBitmap(file)
-  const ratio = Math.min(max / bitmap.width, max / bitmap.height, 1)
-  const w = Math.max(1, Math.round(bitmap.width * ratio))
-  const h = Math.max(1, Math.round(bitmap.height * ratio))
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('canvas 2d unavailable')
-  ctx.drawImage(bitmap, 0, 0, w, h)
-  return canvas.toDataURL('image/jpeg', 0.85)
-}

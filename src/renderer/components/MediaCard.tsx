@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Play } from 'lucide-react'
 import { Artwork } from './Artwork'
 import { artworkUrl, clsx } from '../utils/format'
+import { useLocalPlaylistCover } from '../utils/playlist-covers'
 
 interface Props {
   item: any
@@ -22,7 +23,11 @@ function routeFor(item: any): string {
 
 export function MediaCard({ item, onPlay, roundedArtwork = false, size = 'md' }: Props) {
   const attrs = item.attributes ?? {}
-  const art = artworkUrl(attrs.artwork?.url, 600)
+  const type = String(item.type ?? '')
+  // A locally-uploaded cover (create page) overrides Apple's art for our
+  // own library playlists, keyed by the library id.
+  const localCover = useLocalPlaylistCover(type.includes('playlist') ? item.id : undefined)
+  const art = localCover ?? artworkUrl(attrs.artwork?.url, 600)
   const title = attrs.name
   const subtitle = attrs.artistName ?? attrs.curatorName ?? attrs.editorialNotes?.standard ?? ''
   const to = routeFor(item)

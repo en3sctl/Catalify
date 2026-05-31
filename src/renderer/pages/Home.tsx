@@ -21,7 +21,10 @@ import {
   getLibraryPlaylists,
   getLibraryRecentlyAdded,
   getLibrarySongs,
+  isLibraryId,
   playAlbum,
+  playLibraryAlbum,
+  playLibraryPlaylist,
   playPlaylist,
   playSongs,
 } from '../utils/musickit-api'
@@ -84,11 +87,21 @@ export function Home() {
       albums: any[]
       playlists: any[]
     }
+    // Surface just-created playlists immediately, before Apple's library
+    // index catches up (same optimistic pattern the Library page uses).
+    const libPlaylists = get<any[]>(3, [])
+    const optimisticPls =
+      (await window.bombo.store.get<any[]>('optimisticLibraryPlaylists')) || []
+    const applePlIds = new Set(libPlaylists.map((p: any) => String(p?.id)).filter(Boolean))
+    const mergedPlaylists = [
+      ...optimisticPls.filter((p: any) => !applePlIds.has(String(p?.id))),
+      ...libPlaylists,
+    ]
     setData({
       recent: get(0, []),
       rotation: get(1, []),
       recommendations: get(2, []),
-      playlists: get(3, []),
+      playlists: mergedPlaylists,
       recentlyAdded: get(4, []),
       librarySongs: get(5, []),
       chartSongs: charts.songs,
@@ -634,10 +647,21 @@ function Skeleton() {
 
 function playItem(item: any) {
   const type = String(item?.type ?? '')
-  const id = item?.attributes?.playParams?.catalogId || item?.id
-  if (type.includes('album')) playAlbum(id).catch(console.error)
-  else if (type.includes('playlist')) playPlaylist(id).catch(console.error)
-  else if (type.includes('song')) playSongs([id]).catch(console.error)
+  const rawId = String(item?.id ?? '')
+  const catalogId = item?.attributes?.playParams?.catalogId
+  const playId = catalogId || rawId
+  // Library items (type "library-…", or p./pl.u-/l./i. ids without a
+  // catalog equivalent) 404 on the catalog endpoints — route them through
+  // the /v1/me/library/… players instead. Apple-curated playlists added to
+  // the library DO carry a catalogId and stay on the catalog path.
+  const lib = type.startsWith('library-') || (!catalogId && isLibraryId(rawId))
+  if (type.includes('album')) {
+    ;(lib ? playLibraryAlbum(rawId) : playAlbum(playId)).catch(console.error)
+  } else if (type.includes('playlist')) {
+    ;(lib ? playLibraryPlaylist(rawId) : playPlaylist(playId)).catch(console.error)
+  } else if (type.includes('song')) {
+    playSongs([playId]).catch(console.error)
+  }
 }
 
 function flattenRecommendations(groups: any[]): any[] {

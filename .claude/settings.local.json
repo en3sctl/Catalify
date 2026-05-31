@@ -6,7 +6,11 @@
       "Bash(awk '{print $2}')",
       "Bash(grep 'v38.8.6+wvcus$\\\\|v39.8.6+wvcus$')",
       "Bash(npm run *)",
-      "WebFetch(domain:enescatal.com)"
+      "WebFetch(domain:enescatal.com)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('sources:',JSON.stringify\\(j.sources,null,2\\)\\);console.log\\('sourceRoot:',j.sourceRoot\\)}catch\\(e\\){console.log\\('parse err',e.message\\)}}\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(npx vite *)",
+      "Bash(echo \"=== tsc exit: $? ===\")"
     ]
   }
 }

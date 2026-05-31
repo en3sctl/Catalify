@@ -211,9 +211,14 @@ export function isLibraryId(id: string): boolean {
 
 export async function getLibraryPlaylist(id: string) {
   const mk = getMusicKit()
+  // `extend[library-songs]=catalogId` is REQUIRED: without it Apple omits
+  // playParams.catalogId from the track relationship, leaving us only the
+  // un-streamable library ids (i.xxx). With it, each track carries its
+  // streamable catalog id so playback resolves. (See playLibraryCollection.)
   const res = await mk.api.music(`/v1/me/library/playlists/${id}`, {
     include: 'tracks',
-  })
+    'extend[library-songs]': 'catalogId',
+  } as any)
   return res.data.data[0]
 }
 
@@ -221,7 +226,8 @@ export async function getLibraryAlbum(id: string) {
   const mk = getMusicKit()
   const res = await mk.api.music(`/v1/me/library/albums/${id}`, {
     include: 'tracks,artists',
-  })
+    'extend[library-songs]': 'catalogId',
+  } as any)
   return res.data.data[0]
 }
 
@@ -508,6 +514,96 @@ export async function getCatalogArtistsByIds(ids: string[]): Promise<any[]> {
   } catch (err) {
     console.warn('[catalog] getArtistsByIds failed', err)
     return []
+  }
+}
+
+/**
+ * Build a "keep the flow going" continuation pool of catalog song IDs
+ * seeded from the CURRENTLY-PLAYING track, used by the player store to
+ * extend the queue when the user's explicit list runs dry — instead of
+ * leaving it to MusicKit's opaque `autoplayEnabled` (which intermittently
+ * returns nothing → dead air, and seeds off the account's global, often
+ * English-heavy taste → a Turkish song followed by random English ones).
+ *
+ * Relevance + language coherence come from seeding off the track's own
+ * artist plus Apple's "similar artists" for that artist: a Turkish song
+ * yields Turkish neighbours, never the account's dominant-language drift.
+ * Returns catalog song ids (library `i.` ids and, optionally, explicit
+ * tracks are filtered out) along with an id→artistName map for shuffle.
+ */
+export async function getRadioContinuation(
+  seedSongId: string,
+  seedArtistId: string | undefined,
+  exclude: Set<string>,
+  limit = 18,
+): Promise<{ ids: string[]; artistNames: Record<string, string> }> {
+  const empty = { ids: [] as string[], artistNames: {} as Record<string, string> }
+  try {
+    const mk = getMusicKit()
+    const sf = await storefront()
+
+    let artistId = seedArtistId
+    if (!artistId && seedSongId && !/^i\./i.test(seedSongId)) {
+      artistId = (await resolveTrackTargets(seedSongId)).artistId
+    }
+    if (!artistId) return empty
+
+    // Lean fetch: the seed artist's top songs + its similar artists.
+    const res = await mk.api.music(`/v1/catalog/${sf}/artists/${artistId}`, {
+      views: 'top-songs,similar-artists',
+    })
+    const artist = res.data?.data?.[0]
+    const collected: any[] = [...(artist?.views?.['top-songs']?.data ?? [])]
+
+    // Pull a few songs from up to 3 similar artists in one batched call so
+    // the continuation isn't the same artist on loop. Best-effort — some
+    // storefronts omit the per-artist top-songs view on the batch endpoint.
+    const simIds: string[] = (artist?.views?.['similar-artists']?.data ?? [])
+      .map((a: any) => String(a?.id ?? ''))
+      .filter(Boolean)
+      .slice(0, 3)
+    if (simIds.length) {
+      try {
+        const simRes = await mk.api.music(`/v1/catalog/${sf}/artists`, {
+          ids: simIds.join(','),
+          views: 'top-songs',
+        })
+        for (const a of simRes.data?.data ?? []) {
+          const songs: any[] = a?.views?.['top-songs']?.data ?? []
+          collected.push(...songs.slice(0, 6))
+        }
+      } catch {}
+    }
+
+    // Respect the "Allow explicit content" preference, same as every list.
+    let allowExplicit = true
+    try {
+      const { usePlayer } = await import('../store/player')
+      allowExplicit = usePlayer.getState().allowExplicit
+    } catch {}
+
+    const artistNames: Record<string, string> = {}
+    const ids: string[] = []
+    const seen = new Set<string>(exclude)
+    for (const s of collected) {
+      const id = String(s?.id ?? '')
+      if (!id || /^i\./i.test(id) || seen.has(id)) continue
+      if (!allowExplicit && s?.attributes?.contentRating === 'explicit') continue
+      seen.add(id)
+      ids.push(id)
+      const nm = s?.attributes?.artistName
+      if (typeof nm === 'string') artistNames[id] = nm
+    }
+
+    // Light shuffle so repeated continuations off the same artist vary.
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    }
+    return { ids: ids.slice(0, limit), artistNames }
+  } catch (err) {
+    console.warn('[getRadioContinuation] failed', err)
+    return empty
   }
 }
 

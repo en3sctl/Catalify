@@ -6,6 +6,7 @@ import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { artworkUrl, clsx } from '../utils/format'
 import { useExplicitFilter } from '../utils/explicit'
+import { useLocalPlaylistCover } from '../utils/playlist-covers'
 import { usePlayer } from '../store/player'
 
 type Tab = 'playlists' | 'albums' | 'songs'
@@ -44,6 +45,18 @@ export function Library() {
     const albumsData = get<any[]>(1, [])
     const sgs = get<any[]>(2, [])
 
+    // Merge in optimistic playlists — ones just created in Çatalify that
+    // Apple's library list hasn't reindexed yet (can lag minutes). Drop any
+    // optimistic entry Apple has started returning so the cache doesn't grow.
+    const optimisticPls =
+      (await window.bombo.store.get<any[]>('optimisticLibraryPlaylists')) || []
+    const applePlIds = new Set(pls.map((p: any) => String(p?.id)).filter(Boolean))
+    const pendingPls = optimisticPls.filter((p: any) => !applePlIds.has(String(p?.id)))
+    if (pendingPls.length !== optimisticPls.length) {
+      window.bombo.store.set('optimisticLibraryPlaylists', pendingPls)
+    }
+    const mergedPlaylists = [...pendingPls, ...pls]
+
     // Merge in optimistic albums — ones the user just added in Çatalify
     // that Apple's library API hasn't reindexed yet (5–15min lag).
     // After the merge, drop any optimistic entry Apple has started
@@ -65,7 +78,7 @@ export function Library() {
     }
     const mergedAlbums = [...stillPending, ...albumsData]
 
-    setPlaylists(pls)
+    setPlaylists(mergedPlaylists)
     setAlbums(mergedAlbums)
     setSongs(sgs)
     // Mirror Apple's "albums in library" set into our store so the
@@ -267,26 +280,29 @@ function Grid({
   }
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-      {items.map((item) => {
-        const attrs = item.attributes ?? {}
-        const art = artworkUrl(attrs.artwork?.url, 400)
-        // Library items use catalog IDs for navigation when available
-        const catalogId = attrs.playParams?.catalogId || item.id
-        const to = kind === 'album' ? `/album/${catalogId}` : `/playlist/${catalogId}`
-        return (
-          <Link
-            key={item.id}
-            to={to}
-            className="group block rounded-xl p-3 hover:bg-white/[0.04] transition"
-          >
-            <Artwork src={art} size="hero" rounded="lg" alt={attrs.name} />
-            <div className="mt-3 truncate text-[13.5px] font-semibold text-white">{attrs.name}</div>
-            <div className="truncate text-[12px] text-obsidian-300">
-              {attrs.artistName ?? attrs.curatorName ?? ''}
-            </div>
-          </Link>
-        )
-      })}
+      {items.map((item) => (
+        <GridCard key={item.id} item={item} kind={kind} />
+      ))}
     </div>
+  )
+}
+
+function GridCard({ item, kind }: { item: any; kind: 'album' | 'playlist' }) {
+  const attrs = item.attributes ?? {}
+  // Library items use catalog IDs for navigation when available
+  const catalogId = attrs.playParams?.catalogId || item.id
+  const to = kind === 'album' ? `/album/${catalogId}` : `/playlist/${catalogId}`
+  // A locally-uploaded cover (create page) overrides Apple's art for our
+  // own library playlists, keyed by the library id.
+  const localCover = useLocalPlaylistCover(kind === 'playlist' ? item.id : undefined)
+  const art = localCover ?? artworkUrl(attrs.artwork?.url, 400)
+  return (
+    <Link to={to} className="group block rounded-xl p-3 hover:bg-white/[0.04] transition">
+      <Artwork src={art} size="hero" rounded="lg" alt={attrs.name} />
+      <div className="mt-3 truncate text-[13.5px] font-semibold text-white">{attrs.name}</div>
+      <div className="truncate text-[12px] text-obsidian-300">
+        {attrs.artistName ?? attrs.curatorName ?? ''}
+      </div>
+    </Link>
   )
 }

@@ -87,6 +87,12 @@ export function useMusicKit() {
           }
           usePlayer.getState().setNowPlaying(newNp)
           usePlayer.getState().setDuration(item?.attributes?.durationInMillis ?? 0)
+          // Proactively top the queue up with same-vibe songs seeded off
+          // THIS track, so when the explicit list runs out the hand-off is
+          // seamless (no dead air) and stays in the right language/genre.
+          if (newNp?.id) {
+            usePlayer.getState().extendQueue().catch(() => {})
+          }
         }
         const onPlaybackStateChange = ({ state }: { state: number }) => {
           // 1 = loading, 2 = playing, 3 = paused, 4 = stopped, 5 = ended,
@@ -99,8 +105,20 @@ export function useMusicKit() {
           // client queue has something after the current head. Otherwise
           // let MusicKit's autoplay extend the session.
           if (state === 5 || state === 10) {
-            if (usePlayer.getState().playbackQueue.length > 1) {
-              usePlayer.getState().next().catch((err) => console.error('[auto-advance]', err))
+            const st = usePlayer.getState()
+            if (st.playbackQueue.length > 1) {
+              st.next().catch((err) => console.error('[auto-advance]', err))
+            } else {
+              // Queue exhausted — try a radio continuation seeded off this
+              // track, then advance into it. If that turns up nothing,
+              // MusicKit's own autoplayEnabled is the final safety net.
+              st.extendQueue()
+                .then(() => {
+                  if (usePlayer.getState().playbackQueue.length > 1) {
+                    usePlayer.getState().next().catch((err) => console.error('[auto-advance]', err))
+                  }
+                })
+                .catch((err) => console.error('[auto-advance]', err))
             }
           }
         }

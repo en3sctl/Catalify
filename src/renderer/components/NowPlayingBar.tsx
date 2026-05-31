@@ -3,11 +3,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
-  Volume2, VolumeX, ChevronUp, ChevronDown, Heart, ListMusic, Mic2,
+  ChevronUp, ChevronDown, Heart, ListMusic, Mic2,
   PictureInPicture2, Share2, Check, Maximize2,
 } from 'lucide-react'
 import { usePlayer } from '../store/player'
 import { ProgressBar } from './ProgressBar'
+import { VolumeSlider } from './VolumeSlider'
 import { artworkUrl, clsx } from '../utils/format'
 import { QueueDrawer } from './QueueDrawer'
 import { SleepTimer } from './SleepTimer'
@@ -189,24 +190,7 @@ export function NowPlayingBar() {
             >
               <PictureInPicture2 size={15} />
             </button>
-            <div className="flex items-center gap-2 ml-1">
-              <button
-                onClick={() => setVolume(volume > 0 ? 0 : 0.8)}
-                className="text-obsidian-300 hover:text-white transition"
-                title="Mute (M)"
-              >
-                {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={volume}
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-20 accent-white/80 cursor-pointer"
-              />
-            </div>
+            <VolumeSlider volume={volume} onChange={setVolume} width={80} className="ml-1" />
           </div>
         </div>
       </div>
