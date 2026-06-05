@@ -414,6 +414,45 @@ export async function getLibraryPlaylists(limit = 200) {
   return paginateLibrary('/v1/me/library/playlists', limit)
 }
 
+/**
+ * Artists in the user's library (the "Artists" tab in Apple Music). We
+ * request `include=catalog` so each library artist carries its catalog
+ * equivalent — that's the id we link to (/artist/:id) and reconcile against
+ * locally-favorited artists. Library-only artists with no catalog match are
+ * skipped by callers. Best-effort: returns [] on any failure.
+ */
+export async function getLibraryArtists(limit = 300): Promise<any[]> {
+  const mk = getMusicKit()
+  const PAGE = 100
+  const out: any[] = []
+  let offset = 0
+  try {
+    while (out.length < limit) {
+      const ask = Math.min(PAGE, limit - out.length)
+      const res = await mk.api.music('/v1/me/library/artists', {
+        limit: ask,
+        offset,
+        include: 'catalog',
+      } as any)
+      const batch: any[] = res?.data?.data ?? []
+      out.push(...batch)
+      if (batch.length < ask) break
+      offset += batch.length
+      if (offset > 2000) break
+    }
+  } catch (err: any) {
+    console.warn('[MusicKit] /v1/me/library/artists unavailable', err?.message || err)
+  }
+  return out
+}
+
+/** Pull the linkable catalog id from a library-artist object, if any. */
+export function libraryArtistCatalogId(a: any): string | undefined {
+  const cat = a?.relationships?.catalog?.data?.[0]
+  const id = cat?.id || a?.attributes?.playParams?.catalogId
+  return id ? String(id) : undefined
+}
+
 export async function getLibraryAlbums(limit = 500) {
   return paginateLibrary('/v1/me/library/albums', limit)
 }

@@ -19,6 +19,7 @@ import {
   unauthorize,
 } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
+import { MediaCard } from '../components/MediaCard'
 import { artworkUrl, clsx } from '../utils/format'
 import { resizeImageToDataUrl } from '../utils/image'
 import { Link } from 'react-router-dom'
@@ -52,7 +53,7 @@ export function Profile() {
   const [storefront, setStorefront] = useState('')
   const [rotation, setRotation] = useState<any[]>([])
   const [followingArtists, setFollowingArtists] = useState<any[]>([])
-  const [playlistCount, setPlaylistCount] = useState(0)
+  const [playlists, setPlaylists] = useState<any[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -69,10 +70,18 @@ export function Profile() {
     Promise.all([
       getHeavyRotation(10).catch(() => []),
       getLibraryPlaylists(100).catch(() => []),
-    ]).then(([rot, pls]) => {
+    ]).then(async ([rot, pls]) => {
       setRotation(Array.isArray(rot) ? rot : [])
-      setPlaylistCount(Array.isArray(pls) ? pls.length : 0)
+      const list = Array.isArray(pls) ? pls : []
+      // Merge in just-created playlists Apple hasn't reindexed yet.
+      const optimistic =
+        (await window.bombo.store.get<any[]>('optimisticLibraryPlaylists')) || []
+      const ids = new Set(list.map((p: any) => String(p?.id)))
+      setPlaylists([...optimistic.filter((p: any) => !ids.has(String(p?.id))), ...list])
     })
+    // Reconcile followed artists from the user's real Apple library so the
+    // "Following" grid is populated + durable even on a fresh boot.
+    usePlayer.getState().syncLibraryArtists()
   }, [])
 
   // Hydrate the "Following" grid by resolving the catalog IDs we've
@@ -239,8 +248,32 @@ export function Profile() {
         <Stat icon={<Heart size={16} />} label="Liked" value={likedCount} to="/liked" />
         <Stat icon={<Disc3 size={16} />} label="Saved albums" value={savedAlbums} to="/library" />
         <Stat icon={<Users size={16} />} label="Following" value={followedArtistIds.length} />
-        <Stat icon={<ListMusic size={16} />} label="Playlists" value={playlistCount} to="/library" />
+        <Stat icon={<ListMusic size={16} />} label="Playlists" value={playlists.length} to="/library" />
       </section>
+
+      {/* Your playlists — the ones you've made / saved in your library */}
+      {playlists.length > 0 && (
+        <section>
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <h2 className="font-display text-[22px] font-bold tracking-tight leading-none">
+                Your playlists
+              </h2>
+              <p className="text-[12.5px] text-cream/55 mt-1.5">
+                Playlists in your library
+              </p>
+            </div>
+            <Link to="/library" className="text-[12px] text-cream/55 hover:text-cream">
+              See all →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {playlists.slice(0, 10).map((pl) => (
+              <MediaCard key={pl.id} item={pl} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Heavy rotation — small grid, links into albums/playlists */}
       {rotation.length > 0 && (
@@ -295,7 +328,7 @@ export function Profile() {
                 Following
               </h2>
               <p className="text-[12.5px] text-cream/55 mt-1.5">
-                Artists you've followed in Çatalify
+                Artists you follow
               </p>
             </div>
           </div>

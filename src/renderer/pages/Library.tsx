@@ -92,12 +92,22 @@ export function Library() {
     }
     const setLibrarySaved = usePlayer.getState().setLibrarySaved
     setLibrarySaved('albums', savedAlbumMap)
-    window.bombo.store.set('librarySaved', {
-      ...usePlayer.getState().librarySaved,
-      albums: savedAlbumMap,
-    })
+    // Persist albums WITHOUT clobbering followed artists. Merge the
+    // on-disk artist set with the in-memory one so an early refresh that
+    // races the boot-time restore can never wipe the user's follows.
+    const persisted =
+      (await window.bombo.store.get<{ artists?: Record<string, boolean> }>('librarySaved')) || {}
+    const mergedArtists = {
+      ...(persisted.artists || {}),
+      ...usePlayer.getState().librarySaved.artists,
+    }
+    setLibrarySaved('artists', mergedArtists)
+    window.bombo.store.set('librarySaved', { albums: savedAlbumMap, artists: mergedArtists })
     setLoading(false)
     if (mode === 'manual') setRefreshing(false)
+    // Reconcile followed artists from the user's real Apple library so the
+    // Follow state + Profile grid stay populated and durable (best-effort).
+    usePlayer.getState().syncLibraryArtists()
   }, [])
 
   useEffect(() => { refresh('initial') }, [refresh])

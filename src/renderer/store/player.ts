@@ -2,8 +2,10 @@ import { create } from 'zustand'
 import {
   addToLibrary,
   favoriteArtist,
+  getLibraryArtists,
   getMusicKit,
   getRadioContinuation,
+  libraryArtistCatalogId,
   loveSong,
   unfavoriteArtist,
   unloveSong,
@@ -166,6 +168,14 @@ interface PlayerState {
   toggleLibraryAlbum: (id: string, albumSnapshot?: any) => Promise<void>
   toggleLibraryArtist: (id: string) => Promise<void>
   setLibrarySaved: (kind: 'albums' | 'artists', map: Record<string, boolean>) => void
+  /**
+   * Reconcile the followed-artists set from the user's actual Apple Music
+   * library artists. Local favorites alone are fragile (a fresh install or
+   * an old build leaves them empty); pulling /v1/me/library/artists makes
+   * "Following" durable and self-healing. Best-effort + additive — it only
+   * UNIONS new ids in, never removes a local favorite.
+   */
+  syncLibraryArtists: () => Promise<void>
   /**
    * Seed a fresh playback context after a MusicKit setQueue. `startId`
    * becomes `playbackQueue[0]`; the rest of the queue is derived from
@@ -546,6 +556,27 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
   setLibrarySaved: (kind, map) =>
     set({ librarySaved: { ...get().librarySaved, [kind]: map } }),
+
+  syncLibraryArtists: async () => {
+    try {
+      const arts = await getLibraryArtists(300)
+      if (!arts?.length) return
+      const add: Record<string, boolean> = {}
+      for (const a of arts) {
+        const id = libraryArtistCatalogId(a)
+        if (id) add[id] = true
+      }
+      const cur = get().librarySaved
+      const mergedArtists = { ...cur.artists, ...add }
+      // No genuinely-new ids → skip the write/render churn.
+      if (Object.keys(mergedArtists).length === Object.keys(cur.artists).length) return
+      const next = { ...cur, artists: mergedArtists }
+      set({ librarySaved: next })
+      window.bombo.store.set('librarySaved', next)
+    } catch (err) {
+      console.warn('[syncLibraryArtists] failed', err)
+    }
+  },
 
   play: async () => {
     try { await getMusicKit().play() } catch (e) { console.error(e) }
