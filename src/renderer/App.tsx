@@ -26,6 +26,7 @@ import { Artist } from './pages/Artist'
 import { Profile } from './pages/Profile'
 import { Settings } from './pages/Settings'
 import { Toasts } from './components/Toasts'
+import { UpdateBanner } from './components/UpdateBanner'
 import { ContextMenuProvider } from './components/ContextMenuProvider'
 import { LayoutGroup } from 'framer-motion'
 
@@ -98,6 +99,7 @@ function MainApp() {
           </main>
           {!immersive && <NowPlayingBar />}
           <Toasts />
+          <UpdateBanner />
         </div>
       </LayoutGroup>
     </ContextMenuProvider>

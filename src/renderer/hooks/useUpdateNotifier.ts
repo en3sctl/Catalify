@@ -6,9 +6,10 @@ import { toast } from '../store/toast'
  *
  * Behaviour:
  *   • "update-available"  → silent info toast "Downloading v…".
- *   • "update-downloaded" → persistent toast with a Restart button that
- *                           calls `updater:install-now`.
- *   • Errors              → surfaced as an error toast with the message.
+ *   • "update-downloaded" → handled by <UpdateBanner/> (a Discord-style
+ *                           top-right card with a one-click Restart button),
+ *                           so we deliberately do NOT toast it here.
+ *   • Errors              → logged (only network noise is swallowed).
  *
  * The updater only runs in packaged builds (main-process side short-
  * circuits in dev), so in `npm run dev` this hook is effectively a no-op
@@ -26,13 +27,6 @@ export function useUpdateNotifier() {
       )
     })
 
-    const offDownloaded = api.onUpdateDownloaded(({ version }: { version: string | null }) => {
-      toast.success(
-        'Update ready',
-        `Version ${version ?? ''} installs automatically next time you close Çatalify.`,
-      )
-    })
-
     const offError = api.onError(({ message }: { message: string }) => {
       // Don't spam — only surface if it's something actionable.
       if (/ENOTFOUND|ETIMEDOUT|network/i.test(message)) return
@@ -41,7 +35,6 @@ export function useUpdateNotifier() {
 
     return () => {
       offAvailable?.()
-      offDownloaded?.()
       offError?.()
     }
   }, [])
