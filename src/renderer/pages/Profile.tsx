@@ -20,6 +20,7 @@ import {
 } from '../utils/musickit-api'
 import { Artwork } from '../components/Artwork'
 import { MediaCard } from '../components/MediaCard'
+import { SocialProfileCard } from '../components/SocialProfileCard'
 import { artworkUrl, clsx } from '../utils/format'
 import { resizeImageToDataUrl } from '../utils/image'
 import { Link } from 'react-router-dom'
@@ -250,6 +251,9 @@ export function Profile() {
         <Stat icon={<Users size={16} />} label="Following" value={followedArtistIds.length} />
         <Stat icon={<ListMusic size={16} />} label="Playlists" value={playlists.length} to="/library" />
       </section>
+
+      {/* Çatalify social account — claim a handle / edit profile */}
+      <SocialProfileCard defaultName={name} />
 
       {/* Your playlists — the ones you've made / saved in your library */}
       {playlists.length > 0 && (

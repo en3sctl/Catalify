@@ -1,0 +1,257 @@
+import { useEffect, useRef, useState } from 'react'
+import { AtSign, Check, Loader2, Sparkles, X } from 'lucide-react'
+import { useSocial } from '../store/social'
+import { HANDLE_RE, handleAvailable } from '../utils/social-api'
+import { toast } from '../store/toast'
+
+/**
+ * Çatalify social account card (Phase 1). When the user hasn't claimed a
+ * handle yet, it shows a sign-up form (handle + display name with live
+ * availability). Once claimed, it shows @handle and lets them edit their
+ * display name + bio. The handle is the identity friends will search for.
+ */
+export function SocialProfileCard({ defaultName }: { defaultName?: string }) {
+  const { user, ready, register, update, signOut } = useSocial()
+
+  if (!ready) {
+    return (
+      <div className="rounded-2xl liquid-glass p-5 flex items-center gap-2 text-obsidian-300 text-sm">
+        <Loader2 size={16} className="animate-spin" /> Loading your Çatalify account…
+      </div>
+    )
+  }
+
+  return user ? (
+    <ClaimedCard onUpdate={update} onSignOut={signOut} user={user} />
+  ) : (
+    <ClaimForm defaultName={defaultName} onRegister={register} />
+  )
+}
+
+/* ── Not signed up yet: claim a handle ─────────────────────── */
+
+function ClaimForm({
+  defaultName,
+  onRegister,
+}: {
+  defaultName?: string
+  onRegister: (handle: string, displayName: string) => Promise<void>
+}) {
+  const [handle, setHandle] = useState('')
+  const [displayName, setDisplayName] = useState(defaultName ?? '')
+  const [checking, setChecking] = useState(false)
+  const [available, setAvailable] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  const debounce = useRef<number | null>(null)
+
+  const valid = HANDLE_RE.test(handle)
+
+  useEffect(() => {
+    setAvailable(null)
+    if (debounce.current) window.clearTimeout(debounce.current)
+    if (!valid) return
+    setChecking(true)
+    debounce.current = window.setTimeout(async () => {
+      const ok = await handleAvailable(handle)
+      setAvailable(ok)
+      setChecking(false)
+    }, 350)
+    return () => {
+      if (debounce.current) window.clearTimeout(debounce.current)
+    }
+  }, [handle, valid])
+
+  const canSubmit = valid && available === true && displayName.trim().length > 0 && !busy
+
+  const submit = async () => {
+    if (!canSubmit) return
+    setBusy(true)
+    try {
+      await onRegister(handle, displayName.trim())
+      toast.success('Çatalify account created', `You're @${handle}`)
+    } catch (err: any) {
+      if (err?.code === 'handle_taken') {
+        setAvailable(false)
+        toast.error('Handle taken', 'Pick another username.')
+      } else {
+        toast.error('Couldn\'t create account', err?.message || String(err))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl liquid-glass p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles size={15} className="accent-text" />
+        <h2 className="font-display text-[18px] font-bold tracking-tight">Join Çatalify social</h2>
+      </div>
+      <p className="text-[12.5px] text-obsidian-300 mb-4 max-w-lg">
+        Claim a username so friends can find and follow you, see your playlists, and
+        what you're playing. One-time — no email or password.
+      </p>
+
+      <div className="flex flex-col gap-3 max-w-md">
+        <div>
+          <div className="flex items-center gap-2 rounded-xl px-3.5 py-2.5 bg-white/[0.04] border border-white/[0.07] focus-within:border-white/[0.16] transition">
+            <AtSign size={15} className="text-obsidian-400 flex-shrink-0" />
+            <input
+              value={handle}
+              onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="username"
+              maxLength={20}
+              className="flex-1 bg-transparent outline-none text-[14px] text-cream placeholder:text-obsidian-500"
+            />
+            {handle.length > 0 && (
+              <span className="flex-shrink-0">
+                {checking ? (
+                  <Loader2 size={15} className="animate-spin text-obsidian-400" />
+                ) : !valid ? (
+                  <X size={15} className="text-rose-400" />
+                ) : available === true ? (
+                  <Check size={15} className="text-emerald-400" />
+                ) : available === false ? (
+                  <X size={15} className="text-rose-400" />
+                ) : null}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-obsidian-400 mt-1.5 ml-1">
+            {handle.length > 0 && !valid
+              ? '2–20 characters: letters, numbers, underscore'
+              : available === false && valid
+                ? 'That username is taken'
+                : 'Lowercase letters, numbers and _'}
+          </p>
+        </div>
+
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="Display name"
+          maxLength={64}
+          className="rounded-xl px-3.5 py-2.5 bg-white/[0.04] border border-white/[0.07] focus:border-white/[0.16] outline-none text-[14px] text-cream placeholder:text-obsidian-500 transition"
+        />
+
+        <button
+          onClick={submit}
+          disabled={!canSubmit}
+          className="self-start px-5 py-2.5 rounded-xl accent-bg text-obsidian-950 font-semibold text-[13px] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          {busy ? 'Creating…' : 'Create account'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ── Signed up: show + edit profile ────────────────────────── */
+
+function ClaimedCard({
+  user,
+  onUpdate,
+  onSignOut,
+}: {
+  user: { handle: string; displayName: string; bio: string | null }
+  onUpdate: (patch: { displayName?: string; bio?: string }) => Promise<void>
+  onSignOut: () => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draftName, setDraftName] = useState(user.displayName)
+  const [draftBio, setDraftBio] = useState(user.bio ?? '')
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await onUpdate({ displayName: draftName.trim() || user.displayName, bio: draftBio.trim() })
+      setEditing(false)
+      toast.info('Profile updated')
+    } catch (err: any) {
+      toast.error('Couldn\'t save', err?.message || String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl liquid-glass p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 accent-text">
+            <Sparkles size={14} />
+            <span className="text-[11px] uppercase tracking-[0.18em] font-medium">Çatalify social</span>
+          </div>
+          <div className="mt-1.5 text-[20px] font-display font-bold tracking-tight text-cream truncate">
+            @{user.handle}
+          </div>
+        </div>
+        {!editing && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => {
+                setDraftName(user.displayName)
+                setDraftBio(user.bio ?? '')
+                setEditing(true)
+              }}
+              className="px-3.5 py-1.5 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.07] text-[12px] text-cream/85 transition"
+            >
+              Edit profile
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('Sign out of Çatalify social? You can sign back in with the same username on this device.')) {
+                  onSignOut()
+                }
+              }}
+              className="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-[12px] text-obsidian-300 hover:text-cream transition"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="mt-4 flex flex-col gap-3 max-w-md">
+          <input
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            placeholder="Display name"
+            maxLength={64}
+            className="rounded-xl px-3.5 py-2.5 bg-white/[0.04] border border-white/[0.07] focus:border-white/[0.16] outline-none text-[14px] text-cream placeholder:text-obsidian-500 transition"
+          />
+          <textarea
+            value={draftBio}
+            onChange={(e) => setDraftBio(e.target.value)}
+            placeholder="Bio — optional"
+            rows={2}
+            maxLength={200}
+            className="rounded-xl px-3.5 py-2.5 bg-white/[0.04] border border-white/[0.07] focus:border-white/[0.16] outline-none text-[13.5px] text-cream placeholder:text-obsidian-500 resize-none transition"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={save}
+              disabled={busy}
+              className="px-4 py-2 rounded-xl accent-bg text-obsidian-950 font-semibold text-[13px] hover:brightness-110 disabled:opacity-50 transition"
+            >
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-4 py-2 rounded-xl text-[13px] text-obsidian-200 hover:text-white hover:bg-white/[0.04] transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2">
+          <div className="text-[14px] text-cream/90">{user.displayName}</div>
+          {user.bio && <p className="text-[12.5px] text-obsidian-300 mt-1 max-w-lg">{user.bio}</p>}
+        </div>
+      )}
+    </div>
+  )
+}

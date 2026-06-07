@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSyncAndPresence } from './hooks/useSyncAndPresence'
 import { useUpdateNotifier } from './hooks/useUpdateNotifier'
 import { usePlayer } from './store/player'
+import { useSocial } from './store/social'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { NowPlayingBar } from './components/NowPlayingBar'
@@ -46,6 +47,9 @@ function MainApp() {
   useSyncAndPresence({ isMiniPlayer: false })
   useRestoreLikes()
   useUpdateNotifier()
+  useEffect(() => {
+    useSocial.getState().init()
+  }, [])
   const fullScreen = useFullScreen()
 
   // Now Playing is an immersive takeover — no sidebar, no bottom bar, no

@@ -28,8 +28,11 @@ Thumbs.db
 # Electron
 app.asar
 
-# Cloudflare Worker (separate project — Apple .p8 lives here, do not track)
+# Cloudflare Workers (separate projects, deployed from local — keep the public
+# app repo free of backend source). catalify-token signs Apple dev tokens;
+# catalify-api is the social backend (Worker + D1).
 catalify-token/
+catalify-api/
 
 # Misc
 coverage/
