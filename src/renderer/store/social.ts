@@ -4,6 +4,7 @@ import {
   fetchMe,
   getStoredUser,
   getToken,
+  loginAccount,
   registerAccount,
   signOutSocial,
   updateProfile,
@@ -16,6 +17,8 @@ interface SocialState {
   ready: boolean
   init: () => Promise<void>
   register: (handle: string, displayName: string) => Promise<void>
+  /** Log back into an existing handle using this device's stored key. */
+  login: (handle: string) => Promise<void>
   update: (patch: { displayName?: string; bio?: string; avatarUrl?: string }) => Promise<void>
   signOut: () => Promise<void>
 }
@@ -35,6 +38,10 @@ export const useSocial = create<SocialState>((set) => ({
   },
   register: async (handle, displayName) => {
     const u = await registerAccount(handle, displayName)
+    set({ user: u })
+  },
+  login: async (handle) => {
+    const u = await loginAccount(handle)
     set({ user: u })
   },
   update: async (patch) => {

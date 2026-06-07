@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Music, Plus, Search as SearchIcon, Sparkles, X } from 'lucide-react'
 import {
-  getArtist,
+  getCatalogSongsByIds,
   getCharts,
   getHeavyRotation,
+  getRadioContinuation,
   search as catalogSearch,
 } from '../utils/musickit-api'
 import { artworkUrl, clsx, formatDuration } from '../utils/format'
@@ -111,25 +112,39 @@ export function PlaylistSongAdder({ existingIds, seedArtistIds, onAdd }: Props) 
         }
       }
 
-      // 1) Seed off the artists of the last few tracks (relevant + same lang).
       const seedArtists = [...new Set(seedRef.current.slice(-3))].filter(Boolean) as string[]
-      for (const aid of seedArtists) {
-        try {
-          const artist = await getArtist(aid)
-          const top = artist?.views?.['top-songs']?.data ?? []
-          for (const s of top) pushUnique(s)
-        } catch {}
-        if (fresh.length >= 12) break
+
+      // 1) When the playlist already has songs, keep suggestions in the SAME
+      //    vibe: pull the seed artists' tracks + their similar artists
+      //    (reuses the radio-continuation seed), then hydrate to full song
+      //    objects. This is what makes recs feel related rather than random.
+      if (seedArtists.length > 0) {
+        const ids: string[] = []
+        for (const aid of seedArtists) {
+          try {
+            const { ids: rids } = await getRadioContinuation('', aid, exclude, 18)
+            ids.push(...rids)
+          } catch {}
+          if (ids.length >= 24) break
+        }
+        const uniqIds = [...new Set(ids)].filter((id) => !exclude.has(id)).slice(0, 25)
+        if (uniqIds.length > 0) {
+          try {
+            const songs = await getCatalogSongsByIds(uniqIds)
+            for (const s of songs) pushUnique(s)
+          } catch {}
+        }
       }
-      // 2) Top up from storefront charts (language-appropriate) …
-      if (fresh.length < 8) {
+
+      // 2) Fallback ONLY for an empty playlist (no seed yet) or if nothing
+      //    relevant came back — storefront charts (language-appropriate),
+      //    then heavy rotation. We deliberately DON'T mix generic charts in
+      //    when we have seed artists, so the feed stays on-genre.
+      if (fresh.length < 6 && seedArtists.length === 0) {
         try {
           const { songs } = await getCharts(['songs'], 30)
           for (const s of songs) pushUnique(s)
         } catch {}
-      }
-      // 3) … then heavy rotation (drill the first song of each item).
-      if (fresh.length < 8) {
         try {
           const rotation = await getHeavyRotation(20)
           for (const item of rotation) {

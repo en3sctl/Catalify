@@ -11,7 +11,7 @@ import { toast } from '../store/toast'
  * display name + bio. The handle is the identity friends will search for.
  */
 export function SocialProfileCard({ defaultName }: { defaultName?: string }) {
-  const { user, ready, register, update, signOut } = useSocial()
+  const { user, ready, register, login, update, signOut } = useSocial()
 
   if (!ready) {
     return (
@@ -24,7 +24,7 @@ export function SocialProfileCard({ defaultName }: { defaultName?: string }) {
   return user ? (
     <ClaimedCard onUpdate={update} onSignOut={signOut} user={user} />
   ) : (
-    <ClaimForm defaultName={defaultName} onRegister={register} />
+    <ClaimForm defaultName={defaultName} onRegister={register} onLogin={login} />
   )
 }
 
@@ -33,9 +33,11 @@ export function SocialProfileCard({ defaultName }: { defaultName?: string }) {
 function ClaimForm({
   defaultName,
   onRegister,
+  onLogin,
 }: {
   defaultName?: string
   onRegister: (handle: string, displayName: string) => Promise<void>
+  onLogin: (handle: string) => Promise<void>
 }) {
   const [handle, setHandle] = useState('')
   const [displayName, setDisplayName] = useState(defaultName ?? '')
@@ -75,6 +77,24 @@ function ClaimForm({
         toast.error('Handle taken', 'Pick another username.')
       } else {
         toast.error('Couldn\'t create account', err?.message || String(err))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The handle is taken — maybe it's the user's own account on this device.
+  // Try logging in with the stored device key; only this device's key works.
+  const tryLogin = async () => {
+    setBusy(true)
+    try {
+      await onLogin(handle)
+      toast.success('Signed in', `Welcome back, @${handle}`)
+    } catch (err: any) {
+      if (err?.status === 401) {
+        toast.error('That username isn\'t yours', 'It belongs to a different device/account.')
+      } else {
+        toast.error('Couldn\'t sign in', err?.message || String(err))
       }
     } finally {
       setBusy(false)
@@ -134,13 +154,25 @@ function ClaimForm({
           className="rounded-xl px-3.5 py-2.5 bg-white/[0.04] border border-white/[0.07] focus:border-white/[0.16] outline-none text-[14px] text-cream placeholder:text-obsidian-500 transition"
         />
 
-        <button
-          onClick={submit}
-          disabled={!canSubmit}
-          className="self-start px-5 py-2.5 rounded-xl accent-bg text-obsidian-950 font-semibold text-[13px] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
-        >
-          {busy ? 'Creating…' : 'Create account'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={submit}
+            disabled={!canSubmit}
+            className="px-5 py-2.5 rounded-xl accent-bg text-obsidian-950 font-semibold text-[13px] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            {busy ? 'Creating…' : 'Create account'}
+          </button>
+          {valid && available === false && (
+            <button
+              onClick={tryLogin}
+              disabled={busy}
+              className="px-4 py-2.5 rounded-xl bg-white/[0.06] text-white text-[13px] hover:bg-white/[0.1] disabled:opacity-40 transition"
+              title="If this username is yours on this device, sign back in"
+            >
+              Log in instead
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
