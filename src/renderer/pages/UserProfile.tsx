@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
-import { Check, ListMusic, Play, UserPlus } from 'lucide-react'
+import { Check, ListMusic, Music2, Play, UserPlus } from 'lucide-react'
 import { FollowListModal } from '../components/FollowListModal'
 import {
   FriendUser,
   SharedPlaylist,
+  UserPresence,
   followUser,
   getUserByHandle,
   getUserPlaylists,
+  getUserPresence,
   unfollowUser,
 } from '../utils/social-api'
 import { Avatar } from '../components/UserRow'
 import { playSongs } from '../utils/musickit-api'
-import { artworkUrl, clsx } from '../utils/format'
+import { artworkUrl, clsx, timeAgo } from '../utils/format'
 import { toast } from '../store/toast'
 
 /** Read-only profile of another Çatalify user: follow + their shared playlists. */
@@ -25,16 +27,21 @@ export function UserProfile() {
   const [following, setFollowing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [modalWhich, setModalWhich] = useState<'followers' | 'following' | null>(null)
+  const [presence, setPresence] = useState<UserPresence | null>(null)
 
   useEffect(() => {
     if (!handle) return
     setLoading(true)
     setModalWhich(null)
+    setPresence(null)
     getUserByHandle(handle)
       .then((u) => {
         setUser(u)
         setFollowing(!!u?.isFollowing)
-        if (u) getUserPlaylists(u.id).then(setPlaylists)
+        if (u) {
+          getUserPlaylists(u.id).then(setPlaylists)
+          getUserPresence(u.id).then(setPresence)
+        }
       })
       .finally(() => setLoading(false))
   }, [handle])
@@ -103,6 +110,8 @@ export function UserProfile() {
               {following ? <><Check size={15} /> Following</> : <><UserPlus size={15} /> Follow</>}
             </button>
           )}
+
+          {presence && presence.title && <NowPlayingBanner presence={presence} />}
         </div>
       </section>
 
@@ -130,6 +139,39 @@ export function UserProfile() {
           <FollowListModal userId={user.id} which={modalWhich} onClose={() => setModalWhich(null)} />
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+function NowPlayingBanner({ presence }: { presence: UserPresence }) {
+  const live = presence.isPlaying && Date.now() / 1000 - presence.updatedAt < 150
+  return (
+    <div className="mt-4 flex items-center gap-3 rounded-2xl liquid-glass p-3 max-w-md">
+      <div className="w-12 h-12 rounded-lg overflow-hidden bg-obsidian-800 flex-shrink-0">
+        {presence.artUrl ? (
+          <img src={artworkUrl(presence.artUrl, 120)} alt="" className="w-full h-full object-cover" draggable={false} />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Music2 size={18} className="text-cream/40" />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className={clsx('text-[10.5px] uppercase tracking-[0.12em] font-semibold', live ? 'accent-text' : 'text-cream/40')}>
+          {live ? '● Listening now' : `Last played · ${timeAgo(presence.updatedAt)}`}
+        </div>
+        <div className="truncate text-[13.5px] font-semibold text-cream mt-0.5">{presence.title}</div>
+        <div className="truncate text-[12px] text-obsidian-300">{presence.artist}</div>
+      </div>
+      {presence.trackId && !/^i\./i.test(presence.trackId) && (
+        <button
+          onClick={() => playSongs([presence.trackId as string]).catch(console.error)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-full accent-bg text-obsidian-950 font-semibold text-[12.5px] hover:brightness-110 transition flex-shrink-0"
+          title="Play what they're listening to"
+        >
+          <Play size={13} fill="currentColor" /> Join
+        </button>
+      )}
     </div>
   )
 }

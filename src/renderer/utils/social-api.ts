@@ -323,3 +323,21 @@ export async function getFollowingPresence(): Promise<FriendPresence[]> {
     return []
   }
 }
+
+export interface UserPresence {
+  trackId: string | null
+  title: string
+  artist: string
+  artUrl: string | null
+  isPlaying: boolean
+  updatedAt: number
+}
+
+export async function getUserPresence(id: number): Promise<UserPresence | null> {
+  try {
+    const d = await api(`/users/${id}/presence`)
+    return d.presence ?? null
+  } catch {
+    return null
+  }
+}

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { UserPlus, X } from 'lucide-react'
 import { useSocial } from '../store/social'
-import { FollowNotification, getNotifications } from '../utils/social-api'
+import { useNotifications } from '../store/notifications'
+import { FollowNotification } from '../utils/social-api'
 import { Avatar } from './UserRow'
 
 /**
@@ -13,39 +14,30 @@ import { Avatar } from './UserRow'
  */
 export function FollowNotifications() {
   const user = useSocial((s) => s.user)
+  const items = useNotifications((s) => s.items)
   const navigate = useNavigate()
   const [cards, setCards] = useState<FollowNotification[]>([])
+  // Newest follow seen at session start — only follows ARRIVING after this
+  // pop a card (we don't replay history on launch).
+  const baselineRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!user) {
-      setCards([])
+    baselineRef.current = null
+    setCards([])
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user || items.length === 0) return
+    if (baselineRef.current === null) {
+      baselineRef.current = items[0]?.at ?? 0
       return
     }
-    let alive = true
-    let lastSeen: number | null = null
-    const check = async () => {
-      const notes = await getNotifications()
-      if (!alive) return
-      if (lastSeen === null) {
-        const stored = await window.bombo.store.get<number>('socialLastFollowSeen')
-        // Prime to the newest existing follow so we don't replay history.
-        lastSeen = typeof stored === 'number' ? stored : notes[0]?.at ?? 0
-        if (typeof stored !== 'number') window.bombo.store.set('socialLastFollowSeen', lastSeen)
-      }
-      const fresh = notes.filter((n) => n.at > (lastSeen as number))
-      if (fresh.length > 0) {
-        setCards((cur) => [...fresh.slice(0, 3), ...cur].slice(0, 4))
-        lastSeen = Math.max(lastSeen as number, ...fresh.map((n) => n.at))
-        window.bombo.store.set('socialLastFollowSeen', lastSeen)
-      }
+    const fresh = items.filter((n) => n.at > (baselineRef.current as number))
+    if (fresh.length > 0) {
+      baselineRef.current = Math.max(baselineRef.current as number, ...fresh.map((n) => n.at))
+      setCards((cur) => [...fresh.slice(0, 3), ...cur].slice(0, 4))
     }
-    check()
-    const id = window.setInterval(check, 30000)
-    return () => {
-      alive = false
-      window.clearInterval(id)
-    }
-  }, [user?.id])
+  }, [items, user?.id])
 
   // Auto-dismiss the oldest card a few seconds after the stack changes.
   useEffect(() => {

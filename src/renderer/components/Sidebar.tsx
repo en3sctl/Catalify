@@ -6,6 +6,7 @@ import { useSocial } from '../store/social'
 import { authorize, playSongs } from '../utils/musickit-api'
 import { FriendPresence, getFollowingPresence } from '../utils/social-api'
 import { Avatar } from './UserRow'
+import { NotificationBell } from './NotificationBell'
 import { timeAgo } from '../utils/format'
 
 const items = [
@@ -64,7 +65,14 @@ export function Sidebar() {
 
       <div className="mt-auto">
         <AuthButton ready={isReady} authorized={isAuthorized} />
-        {isAuthorized && <ProfileChip />}
+        {isAuthorized && (
+          <div className="flex items-center gap-1">
+            <div className="flex-1 min-w-0">
+              <ProfileChip />
+            </div>
+            <NotificationBell />
+          </div>
+        )}
       </div>
     </aside>
   )

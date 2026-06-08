@@ -8,6 +8,7 @@ import { useUpdateNotifier } from './hooks/useUpdateNotifier'
 import { usePresenceBroadcast } from './hooks/usePresence'
 import { usePlayer } from './store/player'
 import { useSocial } from './store/social'
+import { useNotifications } from './store/notifications'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { NowPlayingBar } from './components/NowPlayingBar'
@@ -56,6 +57,11 @@ function MainApp() {
     useSocial.getState().init()
   }, [])
   usePresenceBroadcast()
+  const socialUserId = useSocial((s) => s.user?.id)
+  useEffect(() => {
+    if (socialUserId) useNotifications.getState().start()
+    else useNotifications.getState().stop()
+  }, [socialUserId])
   const fullScreen = useFullScreen()
 
   // Now Playing is an immersive takeover — no sidebar, no bottom bar, no
