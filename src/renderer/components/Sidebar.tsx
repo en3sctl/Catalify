@@ -92,7 +92,8 @@ function FriendsActivity() {
       })
     }
     load()
-    const id = window.setInterval(load, 30000)
+    // Poll fairly tight so friends' "now playing" feels live (Spotify-style).
+    const id = window.setInterval(load, 15000)
     return () => {
       alive = false
       window.clearInterval(id)

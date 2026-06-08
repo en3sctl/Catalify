@@ -299,23 +299,24 @@ function ShareActivityToggle() {
       onClick={() => setShareActivity(!shareActivity)}
       className="mt-3 flex items-center gap-2.5 group"
       title="Let friends see what you're playing in their sidebar"
+      aria-pressed={shareActivity}
     >
+      {/* Inline-positioned thumb so the on/off state is always unambiguous. */}
       <span
-        className={clsx(
-          'relative w-9 h-5 rounded-full transition-colors flex-shrink-0',
-          shareActivity ? 'accent-bg' : 'bg-white/[0.12]',
-        )}
+        className="relative w-10 h-[22px] rounded-full transition-colors flex-shrink-0"
+        style={{ backgroundColor: shareActivity ? 'rgb(var(--accent))' : 'rgba(255,255,255,0.14)' }}
       >
         <span
-          className={clsx(
-            'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-            shareActivity ? 'translate-x-[18px]' : 'translate-x-0.5',
-          )}
+          className="absolute top-1/2 -translate-y-1/2 w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.4)] transition-[left] duration-200"
+          style={{ left: shareActivity ? 20 : 2 }}
         />
       </span>
       <span className="flex items-center gap-1.5 text-[12.5px] text-obsidian-200 group-hover:text-cream transition">
         <Radio size={13} className={shareActivity ? 'accent-text' : 'text-obsidian-400'} />
         Share my listening activity
+        <span className={clsx('text-[11px] font-semibold', shareActivity ? 'accent-text' : 'text-obsidian-500')}>
+          · {shareActivity ? 'On' : 'Off'}
+        </span>
       </span>
     </button>
   )
