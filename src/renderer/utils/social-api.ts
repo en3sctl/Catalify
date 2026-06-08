@@ -132,3 +132,134 @@ export async function signOutSocial(): Promise<void> {
   await window.bombo.store.delete('socialUser')
   // Keep socialDeviceKey so the user can log back into the same handle.
 }
+
+// ── Phase 2: social graph ──
+
+export interface FriendUser extends SocialUser {
+  isFollowing?: boolean
+  followers?: number
+  following?: number
+  isMe?: boolean
+}
+
+export async function searchUsers(q: string): Promise<FriendUser[]> {
+  if (!q.trim()) return []
+  try {
+    const d = await api(`/users/search?q=${encodeURIComponent(q.trim())}`)
+    return d.users ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getUserByHandle(handle: string): Promise<FriendUser | null> {
+  try {
+    const d = await api(`/users/${encodeURIComponent(handle)}`)
+    return d.user ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function followUser(id: number): Promise<void> {
+  await api(`/users/${id}/follow`, { method: 'POST' })
+}
+
+export async function unfollowUser(id: number): Promise<void> {
+  await api(`/users/${id}/follow`, { method: 'DELETE' })
+}
+
+export async function getFollowing(): Promise<FriendUser[]> {
+  try {
+    const d = await api('/me/following')
+    return d.users ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getFollowers(): Promise<FriendUser[]> {
+  try {
+    const d = await api('/me/followers')
+    return d.users ?? []
+  } catch {
+    return []
+  }
+}
+
+// ── Phase 3: playlist sharing ──
+
+export interface SharedPlaylist {
+  applePlaylistId: string
+  title: string
+  artUrl: string | null
+  trackIds: string[]
+  sharedAt: number
+}
+
+export async function sharePlaylist(input: {
+  applePlaylistId: string
+  title: string
+  artUrl?: string | null
+  trackIds: string[]
+}): Promise<void> {
+  await api('/me/playlists/share', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export async function unsharePlaylist(applePlaylistId: string): Promise<void> {
+  await api('/me/playlists/share', { method: 'DELETE', body: JSON.stringify({ applePlaylistId }) })
+}
+
+export async function getMySharedPlaylists(): Promise<SharedPlaylist[]> {
+  try {
+    const d = await api('/me/playlists/shared')
+    return d.playlists ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getUserPlaylists(userId: number): Promise<SharedPlaylist[]> {
+  try {
+    const d = await api(`/users/${userId}/playlists`)
+    return d.playlists ?? []
+  } catch {
+    return []
+  }
+}
+
+// ── Phase 4: presence (now playing) ──
+
+export interface FriendPresence {
+  id: number
+  handle: string
+  displayName: string
+  trackId: string | null
+  title: string
+  artist: string
+  artUrl: string | null
+  updatedAt: number
+}
+
+export async function putPresence(input: {
+  trackId?: string | null
+  title: string
+  artist: string
+  artUrl?: string | null
+  isPlaying: boolean
+}): Promise<void> {
+  try {
+    await api('/me/presence', { method: 'PUT', body: JSON.stringify(input) })
+  } catch {
+    // presence is best-effort
+  }
+}
+
+export async function getFollowingPresence(): Promise<FriendPresence[]> {
+  try {
+    const d = await api('/feed/presence')
+    return d.presence ?? []
+  } catch {
+    return []
+  }
+}

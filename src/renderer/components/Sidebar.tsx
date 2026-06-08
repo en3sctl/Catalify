@@ -1,8 +1,11 @@
-import { NavLink, Link } from 'react-router-dom'
+import { NavLink, Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Home, Search, Library, Heart, Radio, ChevronRight } from 'lucide-react'
+import { Home, Search, Library, Heart, Radio, Users, ChevronRight } from 'lucide-react'
 import { usePlayer } from '../store/player'
-import { authorize } from '../utils/musickit-api'
+import { useSocial } from '../store/social'
+import { authorize, playSongs } from '../utils/musickit-api'
+import { FriendPresence, getFollowingPresence } from '../utils/social-api'
+import { artworkUrl } from '../utils/format'
 
 const items = [
   { to: '/', label: 'Home', icon: Home },
@@ -10,6 +13,7 @@ const items = [
   { to: '/library', label: 'Library', icon: Library },
   { to: '/radio', label: 'Radio', icon: Radio },
   { to: '/liked', label: 'Liked', icon: Heart },
+  { to: '/friends', label: 'Friends', icon: Users },
 ]
 
 export function Sidebar() {
@@ -55,11 +59,90 @@ export function Sidebar() {
         ))}
       </nav>
 
+      <FriendsActivity />
+
       <div className="mt-auto">
         <AuthButton ready={isReady} authorized={isAuthorized} />
         {isAuthorized && <ProfileChip />}
       </div>
     </aside>
+  )
+}
+
+/**
+ * Friends' live "now playing" — fills the sidebar's middle gap (Spotify's
+ * Friend Activity). Only shows once the user has a Çatalify account and is
+ * following people who are currently playing. Tapping a row plays that
+ * track; tapping the handle opens their profile.
+ */
+function FriendsActivity() {
+  const user = useSocial((s) => s.user)
+  const navigate = useNavigate()
+  const [presence, setPresence] = useState<FriendPresence[]>([])
+
+  useEffect(() => {
+    if (!user) {
+      setPresence([])
+      return
+    }
+    let alive = true
+    const load = () => {
+      getFollowingPresence().then((p) => {
+        if (alive) setPresence(p)
+      })
+    }
+    load()
+    const id = window.setInterval(load, 30000)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [user?.id])
+
+  if (!user || presence.length === 0) return <div className="flex-1" />
+
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto mt-5 -mx-1 px-1">
+      <div className="px-2 mb-2 text-[10px] uppercase tracking-[0.16em] text-cream/40 font-semibold">
+        Friends listening
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {presence.map((p) => (
+          <div
+            key={p.id}
+            className="group flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-white/[0.04] transition"
+          >
+            <button
+              onClick={() => p.trackId && playSongs([p.trackId]).catch(() => {})}
+              className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+              title={`Play "${p.title}"`}
+            >
+              <div className="w-8 h-8 rounded-md overflow-hidden bg-white/[0.06] flex-shrink-0 relative">
+                {p.artUrl ? (
+                  <img src={artworkUrl(p.artUrl, 80)} alt="" className="w-full h-full object-cover" draggable={false} />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[11px] text-cream/60">
+                    {(p.displayName || p.handle).slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full accent-bg border-2 border-[#0c0a14]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[11.5px] font-semibold text-cream">{p.title}</div>
+                <div className="truncate text-[10px] text-cream/45">{p.artist}</div>
+              </div>
+            </button>
+            <button
+              onClick={() => navigate(`/u/${p.handle}`)}
+              className="text-[10px] text-cream/40 hover:text-cream/80 flex-shrink-0 transition truncate max-w-[64px]"
+              title={`@${p.handle}`}
+            >
+              @{p.handle}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

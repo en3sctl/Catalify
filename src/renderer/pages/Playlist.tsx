@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Play, Shuffle, Pencil, Camera, Check, X } from 'lucide-react'
+import { Play, Shuffle, Pencil, Camera, Check, X, Share2 } from 'lucide-react'
 import {
   addToLibraryPlaylist,
   getLibraryPlaylist,
@@ -11,12 +11,14 @@ import {
 import { Artwork } from '../components/Artwork'
 import { TrackRow } from '../components/TrackRow'
 import { PlaylistSongAdder, AdderTrack } from '../components/PlaylistSongAdder'
-import { artworkUrl } from '../utils/format'
+import { artworkUrl, clsx } from '../utils/format'
 import { useExplicitFilter } from '../utils/explicit'
 import { useLocalPlaylistCover, setPlaylistCover, removePlaylistCover } from '../utils/playlist-covers'
 import { useLocalPlaylistMeta, setPlaylistMeta } from '../utils/playlist-meta'
 import { resizeImageToDataUrl } from '../utils/image'
 import { usePlayer } from '../store/player'
+import { useSocial } from '../store/social'
+import { getMySharedPlaylists, sharePlaylist, unsharePlaylist } from '../utils/social-api'
 import { toast } from '../store/toast'
 
 export function Playlist() {
@@ -41,6 +43,19 @@ export function Playlist() {
   const [draftCover, setDraftCover] = useState<string | null | undefined>(undefined)
   const [savingEdit, setSavingEdit] = useState(false)
   const coverInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Share to Çatalify profile (Phase 3) ──
+  const socialUser = useSocial((s) => s.user)
+  const [shared, setShared] = useState(false)
+  const [sharingBusy, setSharingBusy] = useState(false)
+
+  useEffect(() => {
+    if (!socialUser || !id) {
+      setShared(false)
+      return
+    }
+    getMySharedPlaylists().then((list) => setShared(list.some((p) => p.applePlaylistId === id)))
+  }, [socialUser?.id, id])
 
   useEffect(() => {
     if (!id) return
@@ -176,6 +191,35 @@ export function Playlist() {
     }
   }
 
+  const toggleShare = async () => {
+    if (!id) return
+    setSharingBusy(true)
+    const next = !shared
+    setShared(next)
+    try {
+      if (next) {
+        // Carry the catalog track ids so friends can render even a private
+        // library playlist (Apple's catalog endpoint can't resolve those).
+        const trackIds = existingIds.filter((x) => !/^i\./i.test(x))
+        await sharePlaylist({
+          applePlaylistId: id,
+          title: displayName,
+          artUrl: attrs.artwork?.url ?? null,
+          trackIds,
+        })
+        toast.info('Shared to your profile', 'Friends can see this playlist now.')
+      } else {
+        await unsharePlaylist(id)
+        toast.info('Removed from your profile')
+      }
+    } catch (err: any) {
+      setShared(!next)
+      toast.error('Couldn\'t update sharing', err?.message || String(err))
+    } finally {
+      setSharingBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col md:flex-row gap-6 items-end">
@@ -290,6 +334,22 @@ export function Playlist() {
                   title="Edit playlist"
                 >
                   <Pencil size={15} /> Edit
+                </button>
+              )}
+              {socialUser && (
+                <button
+                  onClick={toggleShare}
+                  disabled={sharingBusy}
+                  className={clsx(
+                    'flex items-center gap-2 px-5 py-2.5 rounded-full transition disabled:opacity-60',
+                    shared
+                      ? 'accent-bg text-obsidian-950 hover:brightness-110'
+                      : 'bg-white/[0.06] text-white hover:bg-white/[0.1]',
+                  )}
+                  title={shared ? 'Shown on your profile — click to unshare' : 'Show this playlist on your profile'}
+                >
+                  {shared ? <Check size={15} /> : <Share2 size={15} />}
+                  {shared ? 'On profile' : 'Show on profile'}
                 </button>
               )}
             </div>

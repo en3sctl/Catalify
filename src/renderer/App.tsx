@@ -5,6 +5,7 @@ import { useArtColors } from './hooks/useArtColors'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSyncAndPresence } from './hooks/useSyncAndPresence'
 import { useUpdateNotifier } from './hooks/useUpdateNotifier'
+import { usePresenceBroadcast } from './hooks/usePresence'
 import { usePlayer } from './store/player'
 import { useSocial } from './store/social'
 import { TitleBar } from './components/TitleBar'
@@ -25,6 +26,8 @@ import { Liked } from './pages/Liked'
 import { Radio } from './pages/Radio'
 import { Artist } from './pages/Artist'
 import { Profile } from './pages/Profile'
+import { Friends } from './pages/Friends'
+import { UserProfile } from './pages/UserProfile'
 import { Settings } from './pages/Settings'
 import { Toasts } from './components/Toasts'
 import { UpdateBanner } from './components/UpdateBanner'
@@ -50,6 +53,7 @@ function MainApp() {
   useEffect(() => {
     useSocial.getState().init()
   }, [])
+  usePresenceBroadcast()
   const fullScreen = useFullScreen()
 
   // Now Playing is an immersive takeover — no sidebar, no bottom bar, no
@@ -96,6 +100,8 @@ function MainApp() {
                   <Route path="/radio" element={<Radio />} />
                   <Route path="/artist/:id" element={<Artist />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/friends" element={<Friends />} />
+                  <Route path="/u/:handle" element={<UserProfile />} />
                   <Route path="/settings" element={<Settings />} />
                 </Routes>
               </LoginGate>
