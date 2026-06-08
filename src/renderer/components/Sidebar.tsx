@@ -5,7 +5,8 @@ import { usePlayer } from '../store/player'
 import { useSocial } from '../store/social'
 import { authorize, playSongs } from '../utils/musickit-api'
 import { FriendPresence, getFollowingPresence } from '../utils/social-api'
-import { artworkUrl } from '../utils/format'
+import { Avatar } from './UserRow'
+import { timeAgo } from '../utils/format'
 
 const items = [
   { to: '/', label: 'Home', icon: Home },
@@ -114,31 +115,30 @@ function FriendsActivity() {
             className="group flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-white/[0.04] transition"
           >
             <button
-              onClick={() => p.trackId && playSongs([p.trackId]).catch(() => {})}
-              className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
-              title={`Play "${p.title}"`}
-            >
-              <div className="w-8 h-8 rounded-md overflow-hidden bg-white/[0.06] flex-shrink-0 relative">
-                {p.artUrl ? (
-                  <img src={artworkUrl(p.artUrl, 80)} alt="" className="w-full h-full object-cover" draggable={false} />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[11px] text-cream/60">
-                    {(p.displayName || p.handle).slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full accent-bg border-2 border-[#0c0a14]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[11.5px] font-semibold text-cream">{p.title}</div>
-                <div className="truncate text-[10px] text-cream/45">{p.artist}</div>
-              </div>
-            </button>
-            <button
               onClick={() => navigate(`/u/${p.handle}`)}
-              className="text-[10px] text-cream/40 hover:text-cream/80 flex-shrink-0 transition truncate max-w-[64px]"
+              className="relative flex-shrink-0"
               title={`@${p.handle}`}
             >
-              @{p.handle}
+              <Avatar name={p.displayName || p.handle} src={p.avatarUrl} size={32} />
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0c0a14] ${
+                  p.isPlaying ? 'bg-emerald-400' : 'bg-white/25'
+                }`}
+              />
+            </button>
+            <button
+              onClick={() => p.trackId && playSongs([p.trackId]).catch(() => {})}
+              className="min-w-0 flex-1 text-left"
+              title={`Play "${p.title}"`}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate text-[11px] font-semibold text-cream">{p.displayName}</span>
+                <span className="text-[9.5px] text-cream/40 flex-shrink-0">
+                  · {p.isPlaying ? 'now' : timeAgo(p.updatedAt)}
+                </span>
+              </div>
+              <div className="truncate text-[11px] text-cream/70 leading-tight">{p.title}</div>
+              <div className="truncate text-[10px] text-cream/40 leading-tight">{p.artist}</div>
             </button>
           </div>
         ))}

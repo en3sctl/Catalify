@@ -248,7 +248,7 @@ export function Profile() {
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat icon={<Heart size={16} />} label="Liked" value={likedCount} to="/liked" />
         <Stat icon={<Disc3 size={16} />} label="Saved albums" value={savedAlbums} to="/library" />
-        <Stat icon={<Users size={16} />} label="Following" value={followedArtistIds.length} />
+        <Stat icon={<Users size={16} />} label="Artists" value={followedArtistIds.length} />
         <Stat icon={<ListMusic size={16} />} label="Playlists" value={playlists.length} to="/library" />
       </section>
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { Check, ListMusic, Play, UserPlus } from 'lucide-react'
 import {
   FriendUser,
@@ -58,7 +58,7 @@ export function UserProfile() {
     <div className="space-y-8 pb-12">
       {/* Header */}
       <section className="flex flex-col md:flex-row md:items-end gap-6">
-        <Avatar name={user.displayName || user.handle} size={140} />
+        <Avatar name={user.displayName || user.handle} src={user.avatarUrl} size={140} />
         <div className="flex-1 min-w-0">
           <div className="text-[12px] uppercase tracking-[0.25em] text-cream/55">Profile</div>
           <h1 className="mt-1 text-4xl md:text-6xl font-display font-bold tracking-[-0.025em] leading-[1] truncate">
@@ -100,7 +100,7 @@ export function UserProfile() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {playlists.map((pl) => (
-              <SharedPlaylistCard key={pl.applePlaylistId} pl={pl} />
+              <SharedPlaylistCard key={pl.applePlaylistId} pl={pl} userId={user.id} />
             ))}
           </div>
         )}
@@ -109,7 +109,7 @@ export function UserProfile() {
   )
 }
 
-function SharedPlaylistCard({ pl }: { pl: SharedPlaylist }) {
+function SharedPlaylistCard({ pl, userId }: { pl: SharedPlaylist; userId: number }) {
   const play = () => {
     const ids = (pl.trackIds || []).filter((id) => id && !/^i\./i.test(id))
     if (ids.length === 0) {
@@ -119,7 +119,10 @@ function SharedPlaylistCard({ pl }: { pl: SharedPlaylist }) {
     playSongs(ids, 0).catch(console.error)
   }
   return (
-    <div className="group rounded-xl p-3 hover:bg-white/[0.04] transition">
+    <Link
+      to={`/shared/${userId}/${encodeURIComponent(pl.applePlaylistId)}`}
+      className="group block rounded-xl p-3 hover:bg-white/[0.04] transition"
+    >
       <div className="relative aspect-square rounded-lg overflow-hidden bg-obsidian-800 shadow-deep">
         {pl.artUrl ? (
           <img src={artworkUrl(pl.artUrl, 400)} alt="" className="w-full h-full object-cover" draggable={false} />
@@ -132,7 +135,11 @@ function SharedPlaylistCard({ pl }: { pl: SharedPlaylist }) {
           </div>
         )}
         <button
-          onClick={play}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            play()
+          }}
           className="absolute bottom-2 right-2 w-10 h-10 rounded-full accent-bg text-obsidian-950 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition shadow-glow flex items-center justify-center"
           aria-label="Play"
         >
@@ -141,6 +148,6 @@ function SharedPlaylistCard({ pl }: { pl: SharedPlaylist }) {
       </div>
       <div className="mt-3 truncate text-[13.5px] font-semibold text-white">{pl.title || 'Playlist'}</div>
       <div className="truncate text-[12px] text-obsidian-300">{(pl.trackIds || []).length} songs</div>
-    </div>
+    </Link>
   )
 }

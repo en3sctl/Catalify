@@ -9,6 +9,8 @@
  * Phase 1 endpoints only (identity). Phase 2+ (follow, playlists) extend this.
  */
 
+import { shrinkDataUrl } from './image'
+
 const BASE = 'https://catalify-api.flair1-flair.workers.dev'
 
 export interface SocialUser {
@@ -130,7 +132,28 @@ export async function updateProfile(patch: {
 export async function signOutSocial(): Promise<void> {
   await window.bombo.store.delete('socialToken')
   await window.bombo.store.delete('socialUser')
+  await window.bombo.store.delete('socialAvatarSource')
   // Keep socialDeviceKey so the user can log back into the same handle.
+}
+
+/**
+ * Push the user's local profile avatar (downscaled to a tiny JPEG) to the
+ * social backend so friends see their picture. Only re-syncs when the local
+ * avatar actually changed (tracked via `socialAvatarSource`).
+ */
+export async function syncAvatar(): Promise<SocialUser | null> {
+  try {
+    const local = await window.bombo.store.get<string>('profileAvatar')
+    if (!local) return null
+    const lastSrc = await window.bombo.store.get<string>('socialAvatarSource')
+    if (local === lastSrc) return null
+    const small = await shrinkDataUrl(local, 96)
+    const u = await updateProfile({ avatarUrl: small })
+    await window.bombo.store.set('socialAvatarSource', local)
+    return u
+  } catch {
+    return null
+  }
 }
 
 // ── Phase 2: social graph ──
@@ -234,11 +257,28 @@ export interface FriendPresence {
   id: number
   handle: string
   displayName: string
+  avatarUrl: string | null
   trackId: string | null
   title: string
   artist: string
   artUrl: string | null
+  isPlaying: boolean
   updatedAt: number
+}
+
+export interface FollowNotification {
+  type: 'follow'
+  at: number
+  user: { id: number; handle: string; displayName: string; avatarUrl: string | null }
+}
+
+export async function getNotifications(): Promise<FollowNotification[]> {
+  try {
+    const d = await api('/me/notifications')
+    return d.notifications ?? []
+  } catch {
+    return []
+  }
 }
 
 export async function putPresence(input: {

@@ -35,3 +35,28 @@ export async function resizeImageToDataUrl(
   ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, w, h)
   return canvas.toDataURL('image/jpeg', 0.85)
 }
+
+/**
+ * Square-crop + shrink an existing data URL to a tiny JPEG (for syncing the
+ * profile avatar to the social backend, which stores it as text in D1 — so
+ * it must stay small, ~3-6 KB at 96px).
+ */
+export async function shrinkDataUrl(dataUrl: string, max: number): Promise<string> {
+  const img = document.createElement('img')
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('image load failed'))
+    img.src = dataUrl
+  })
+  const side = Math.min(img.naturalWidth, img.naturalHeight) || max
+  const sx = Math.round((img.naturalWidth - side) / 2)
+  const sy = Math.round((img.naturalHeight - side) / 2)
+  const w = Math.min(max, side)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = w
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('canvas 2d unavailable')
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, w, w)
+  return canvas.toDataURL('image/jpeg', 0.7)
+}

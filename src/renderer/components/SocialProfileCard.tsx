@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AtSign, Check, Loader2, Radio, Sparkles, X } from 'lucide-react'
 import { useSocial } from '../store/social'
-import { HANDLE_RE, handleAvailable } from '../utils/social-api'
+import { HANDLE_RE, getUserByHandle, handleAvailable } from '../utils/social-api'
 import { clsx } from '../utils/format'
 import { toast } from '../store/toast'
 
@@ -194,6 +195,13 @@ function ClaimedCard({
   const [draftName, setDraftName] = useState(user.displayName)
   const [draftBio, setDraftBio] = useState(user.bio ?? '')
   const [busy, setBusy] = useState(false)
+  const [counts, setCounts] = useState<{ followers: number; following: number } | null>(null)
+
+  useEffect(() => {
+    getUserByHandle(user.handle).then((u) => {
+      if (u) setCounts({ followers: u.followers ?? 0, following: u.following ?? 0 })
+    })
+  }, [user.handle])
 
   const save = async () => {
     setBusy(true)
@@ -219,6 +227,16 @@ function ClaimedCard({
           <div className="mt-1.5 text-[20px] font-display font-bold tracking-tight text-cream truncate">
             @{user.handle}
           </div>
+          {counts && (
+            <div className="mt-1.5 flex items-center gap-4 text-[12.5px] text-obsidian-300">
+              <Link to="/friends" className="hover:text-cream transition">
+                <b className="text-cream">{counts.following}</b> following
+              </Link>
+              <span>
+                <b className="text-cream">{counts.followers}</b> {counts.followers === 1 ? 'follower' : 'followers'}
+              </span>
+            </div>
+          )}
         </div>
         {!editing && (
           <div className="flex items-center gap-2 flex-shrink-0">

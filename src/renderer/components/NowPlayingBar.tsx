@@ -202,6 +202,7 @@ export function NowPlayingBar() {
           art={np.artworkUrl}
           title={np.title}
           artist={np.artistName}
+          artistId={np.artistId}
           album={np.albumName}
         />
       )}
@@ -220,6 +221,7 @@ function ExpandedMini({
   art,
   title,
   artist,
+  artistId,
   album,
 }: {
   open: boolean
@@ -227,6 +229,7 @@ function ExpandedMini({
   art: string | undefined
   title: string
   artist: string
+  artistId?: string
   album: string
 }) {
   return (
@@ -273,7 +276,15 @@ function ExpandedMini({
             </div>
             <div className="mt-3 px-1">
               <div className="truncate text-[14px] font-semibold text-cream">{title}</div>
-              <div className="truncate text-[12px] text-obsidian-300 mt-0.5">{artist}</div>
+              <div className="truncate text-[12px] text-obsidian-300 mt-0.5">
+                {artistId ? (
+                  <Link to={`/artist/${artistId}`} onClick={onClose} className="hover:text-cream hover:underline">
+                    {artist}
+                  </Link>
+                ) : (
+                  artist
+                )}
+              </div>
               {album && (
                 <div className="truncate text-[11px] text-obsidian-400 mt-0.5">{album}</div>
               )}

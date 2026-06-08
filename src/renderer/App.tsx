@@ -28,9 +28,11 @@ import { Artist } from './pages/Artist'
 import { Profile } from './pages/Profile'
 import { Friends } from './pages/Friends'
 import { UserProfile } from './pages/UserProfile'
+import { SharedPlaylist } from './pages/SharedPlaylist'
 import { Settings } from './pages/Settings'
 import { Toasts } from './components/Toasts'
 import { UpdateBanner } from './components/UpdateBanner'
+import { FollowNotifications } from './components/FollowNotifications'
 import { ContextMenuProvider } from './components/ContextMenuProvider'
 import { LayoutGroup } from 'framer-motion'
 
@@ -102,6 +104,7 @@ function MainApp() {
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/friends" element={<Friends />} />
                   <Route path="/u/:handle" element={<UserProfile />} />
+                  <Route path="/shared/:userId/:pid" element={<SharedPlaylist />} />
                   <Route path="/settings" element={<Settings />} />
                 </Routes>
               </LoginGate>
@@ -110,6 +113,7 @@ function MainApp() {
           {!immersive && <NowPlayingBar />}
           <Toasts />
           <UpdateBanner />
+          <FollowNotifications />
         </div>
       </LayoutGroup>
     </ContextMenuProvider>

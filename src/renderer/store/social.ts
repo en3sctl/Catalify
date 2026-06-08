@@ -7,6 +7,7 @@ import {
   loginAccount,
   registerAccount,
   signOutSocial,
+  syncAvatar,
   updateProfile,
 } from '../utils/social-api'
 
@@ -39,6 +40,8 @@ export const useSocial = create<SocialState>((set) => ({
     if (await getToken()) {
       const fresh = await fetchMe()
       if (fresh) set({ user: fresh })
+      const synced = await syncAvatar()
+      if (synced) set({ user: synced })
     }
   },
   setShareActivity: (v) => {
@@ -48,10 +51,14 @@ export const useSocial = create<SocialState>((set) => ({
   register: async (handle, displayName) => {
     const u = await registerAccount(handle, displayName)
     set({ user: u })
+    const synced = await syncAvatar()
+    if (synced) set({ user: synced })
   },
   login: async (handle) => {
     const u = await loginAccount(handle)
     set({ user: u })
+    const synced = await syncAvatar()
+    if (synced) set({ user: synced })
   },
   update: async (patch) => {
     const u = await updateProfile(patch)

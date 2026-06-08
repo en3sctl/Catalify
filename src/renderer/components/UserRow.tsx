@@ -28,7 +28,7 @@ export function UserRow({ user }: { user: FriendUser }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/[0.03] transition">
       <Link to={`/u/${user.handle}`} className="flex items-center gap-3 min-w-0 flex-1">
-        <Avatar name={user.displayName || user.handle} />
+        <Avatar name={user.displayName || user.handle} src={user.avatarUrl} />
         <div className="min-w-0">
           <div className="truncate text-[14px] font-semibold text-cream">{user.displayName}</div>
           <div className="truncate text-[12px] text-cream/50">@{user.handle}</div>
@@ -60,7 +60,18 @@ export function UserRow({ user }: { user: FriendUser }) {
   )
 }
 
-export function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+export function Avatar({ name, src, size = 40 }: { name: string; src?: string | null; size?: number }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        draggable={false}
+        className="rounded-full object-cover border border-white/[0.08] flex-shrink-0"
+        style={{ width: size, height: size }}
+      />
+    )
+  }
   return (
     <div
       className="rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center font-display text-cream/70 flex-shrink-0"
