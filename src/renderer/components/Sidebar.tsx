@@ -109,7 +109,13 @@ function FriendsActivity() {
         Friends listening
       </div>
       <div className="flex flex-col gap-0.5">
-        {presence.map((p) => (
+        {presence.map((p) => {
+          // "now" only if the presence is genuinely LIVE — i.e. still playing
+          // AND updated within the last ~2.5 min (keep-alive is 30 s). A
+          // friend who closed the app leaves a frozen is_playing=1 row; the
+          // freshness check stops it from reading "now" forever.
+          const live = p.isPlaying && Date.now() / 1000 - p.updatedAt < 150
+          return (
           <div
             key={p.id}
             className="group flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-white/[0.04] transition"
@@ -122,7 +128,7 @@ function FriendsActivity() {
               <Avatar name={p.displayName || p.handle} src={p.avatarUrl} size={32} />
               <span
                 className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0c0a14] ${
-                  p.isPlaying ? 'bg-emerald-400' : 'bg-white/25'
+                  live ? 'bg-emerald-400' : 'bg-white/25'
                 }`}
               />
             </button>
@@ -133,15 +139,16 @@ function FriendsActivity() {
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="truncate text-[11px] font-semibold text-cream">{p.displayName}</span>
-                <span className="text-[9.5px] text-cream/40 flex-shrink-0">
-                  · {p.isPlaying ? 'now' : timeAgo(p.updatedAt)}
+                <span className={`text-[9.5px] flex-shrink-0 ${live ? 'accent-text' : 'text-cream/40'}`}>
+                  · {live ? 'now' : timeAgo(p.updatedAt)}
                 </span>
               </div>
               <div className="truncate text-[11px] text-cream/70 leading-tight">{p.title}</div>
               <div className="truncate text-[10px] text-cream/40 leading-tight">{p.artist}</div>
             </button>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

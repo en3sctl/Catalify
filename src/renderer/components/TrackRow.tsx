@@ -1,10 +1,11 @@
 import { Play, Heart } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { usePlayer } from '../store/player'
 import { Artwork } from './Artwork'
 import { artworkUrl, clsx, formatDuration } from '../utils/format'
 import { useContextMenu } from './ContextMenuProvider'
 import { trackContextItems } from '../utils/track-actions'
+import { resolveTrackTargets } from '../utils/musickit-api'
 
 export interface TrackRowProps {
   index: number
@@ -55,6 +56,28 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
     contextMenu.open(e, trackContextItems(track, { navigate, onPlay }))
   }
 
+  // Artist/album are clickable EVERYWHERE: if the row already carries the id
+  // we link instantly; otherwise resolve it on click (search / liked / chart
+  // rows often arrive without relationships) and then navigate.
+  const goArtist = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (artistId) return navigate(`/artist/${artistId}`)
+    if (/^i\./i.test(catalogId)) return
+    try {
+      const { artistId: rid } = await resolveTrackTargets(catalogId)
+      if (rid) navigate(`/artist/${rid}`)
+    } catch {}
+  }
+  const goAlbum = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (albumId) return navigate(`/album/${albumId}`)
+    if (/^i\./i.test(catalogId)) return
+    try {
+      const { albumId: rid } = await resolveTrackTargets(catalogId)
+      if (rid) navigate(`/album/${rid}`)
+    } catch {}
+  }
+
   return (
     <div
       onContextMenu={handleContextMenu}
@@ -94,28 +117,20 @@ export function TrackRow({ index, track, onPlay, showArt = true, showAlbum = tru
           {attrs.contentRating === 'explicit' && <ExplicitBadge />}
         </div>
         <div className="truncate text-[12px] text-obsidian-300">
-          {artistId ? (
-            <Link
-              to={`/artist/${artistId}`}
-              className="hover:text-cream hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
+          {artist && (
+            <button onClick={goArtist} className="hover:text-cream hover:underline text-left max-w-full truncate">
               {artist}
-            </Link>
-          ) : artist}
+            </button>
+          )}
         </div>
       </div>
       {showAlbum && (
         <div className="truncate text-[12px] text-obsidian-300 hidden md:block">
-          {albumId ? (
-            <Link
-              to={`/album/${albumId}`}
-              className="hover:text-cream hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
+          {album && (
+            <button onClick={goAlbum} className="hover:text-cream hover:underline text-left max-w-full truncate">
               {album}
-            </Link>
-          ) : album}
+            </button>
+          )}
         </div>
       )}
       <button
