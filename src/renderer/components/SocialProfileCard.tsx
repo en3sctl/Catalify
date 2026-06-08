@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { AtSign, Check, Loader2, Radio, Sparkles, X } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import { AtSign, Check, Loader2, Lock, Radio, Sparkles, X } from 'lucide-react'
 import { useSocial } from '../store/social'
-import { HANDLE_RE, getUserByHandle, handleAvailable } from '../utils/social-api'
+import { HANDLE_RE, SocialUser, getUserByHandle, handleAvailable } from '../utils/social-api'
+import { FollowListModal } from './FollowListModal'
 import { clsx } from '../utils/format'
 import { toast } from '../store/toast'
 
@@ -187,8 +188,8 @@ function ClaimedCard({
   onUpdate,
   onSignOut,
 }: {
-  user: { handle: string; displayName: string; bio: string | null }
-  onUpdate: (patch: { displayName?: string; bio?: string }) => Promise<void>
+  user: SocialUser
+  onUpdate: (patch: { displayName?: string; bio?: string; hideLists?: boolean }) => Promise<void>
   onSignOut: () => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
@@ -196,6 +197,7 @@ function ClaimedCard({
   const [draftBio, setDraftBio] = useState(user.bio ?? '')
   const [busy, setBusy] = useState(false)
   const [counts, setCounts] = useState<{ followers: number; following: number } | null>(null)
+  const [modalWhich, setModalWhich] = useState<'followers' | 'following' | null>(null)
 
   useEffect(() => {
     getUserByHandle(user.handle).then((u) => {
@@ -229,12 +231,12 @@ function ClaimedCard({
           </div>
           {counts && (
             <div className="mt-1.5 flex items-center gap-4 text-[12.5px] text-obsidian-300">
-              <Link to="/friends" className="hover:text-cream transition">
+              <button onClick={() => setModalWhich('following')} className="hover:text-cream transition">
                 <b className="text-cream">{counts.following}</b> following
-              </Link>
-              <span>
+              </button>
+              <button onClick={() => setModalWhich('followers')} className="hover:text-cream transition">
                 <b className="text-cream">{counts.followers}</b> {counts.followers === 1 ? 'follower' : 'followers'}
-              </span>
+              </button>
             </div>
           )}
         </div>
@@ -301,10 +303,63 @@ function ClaimedCard({
         <div className="mt-2">
           <div className="text-[14px] text-cream/90">{user.displayName}</div>
           {user.bio && <p className="text-[12.5px] text-obsidian-300 mt-1 max-w-lg">{user.bio}</p>}
-          <ShareActivityToggle />
+          <div className="mt-3 flex flex-col gap-2.5">
+            <ShareActivityToggle />
+            <Toggle
+              on={!user.hideLists}
+              onChange={(v) => onUpdate({ hideLists: !v })}
+              icon={<Lock size={13} className={user.hideLists ? 'text-obsidian-400' : 'accent-text'} />}
+              label="Let others see my followers / following"
+            />
+          </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {modalWhich && (
+          <FollowListModal userId={user.id} which={modalWhich} onClose={() => setModalWhich(null)} />
+        )}
+      </AnimatePresence>
     </div>
+  )
+}
+
+/** A labelled pill toggle with an unambiguous On/Off state. */
+function Toggle({
+  on,
+  onChange,
+  icon,
+  label,
+}: {
+  on: boolean
+  onChange: (v: boolean) => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      onClick={() => onChange(!on)}
+      className="flex items-center gap-2.5 group"
+      aria-pressed={on}
+      title={label}
+    >
+      <span
+        className="relative w-10 h-[22px] rounded-full transition-colors flex-shrink-0"
+        style={{ backgroundColor: on ? 'rgb(var(--accent))' : 'rgba(255,255,255,0.14)' }}
+      >
+        <span
+          className="absolute top-1/2 -translate-y-1/2 w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.4)] transition-[left] duration-200"
+          style={{ left: on ? 20 : 2 }}
+        />
+      </span>
+      <span className="flex items-center gap-1.5 text-[12.5px] text-obsidian-200 group-hover:text-cream transition text-left">
+        {icon}
+        {label}
+        <span className={clsx('text-[11px] font-semibold flex-shrink-0', on ? 'accent-text' : 'text-obsidian-500')}>
+          · {on ? 'On' : 'Off'}
+        </span>
+      </span>
+    </button>
   )
 }
 
@@ -313,29 +368,11 @@ function ShareActivityToggle() {
   const shareActivity = useSocial((s) => s.shareActivity)
   const setShareActivity = useSocial((s) => s.setShareActivity)
   return (
-    <button
-      onClick={() => setShareActivity(!shareActivity)}
-      className="mt-3 flex items-center gap-2.5 group"
-      title="Let friends see what you're playing in their sidebar"
-      aria-pressed={shareActivity}
-    >
-      {/* Inline-positioned thumb so the on/off state is always unambiguous. */}
-      <span
-        className="relative w-10 h-[22px] rounded-full transition-colors flex-shrink-0"
-        style={{ backgroundColor: shareActivity ? 'rgb(var(--accent))' : 'rgba(255,255,255,0.14)' }}
-      >
-        <span
-          className="absolute top-1/2 -translate-y-1/2 w-[18px] h-[18px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.4)] transition-[left] duration-200"
-          style={{ left: shareActivity ? 20 : 2 }}
-        />
-      </span>
-      <span className="flex items-center gap-1.5 text-[12.5px] text-obsidian-200 group-hover:text-cream transition">
-        <Radio size={13} className={shareActivity ? 'accent-text' : 'text-obsidian-400'} />
-        Share my listening activity
-        <span className={clsx('text-[11px] font-semibold', shareActivity ? 'accent-text' : 'text-obsidian-500')}>
-          · {shareActivity ? 'On' : 'Off'}
-        </span>
-      </span>
-    </button>
+    <Toggle
+      on={shareActivity}
+      onChange={setShareActivity}
+      icon={<Radio size={13} className={shareActivity ? 'accent-text' : 'text-obsidian-400'} />}
+      label="Share my listening activity"
+    />
   )
 }

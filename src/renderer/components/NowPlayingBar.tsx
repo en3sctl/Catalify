@@ -7,6 +7,7 @@ import {
   PictureInPicture2, Share2, Check, Maximize2,
 } from 'lucide-react'
 import { usePlayer } from '../store/player'
+import { resolveTrackTargets } from '../utils/musickit-api'
 import { ProgressBar } from './ProgressBar'
 import { VolumeSlider } from './VolumeSlider'
 import { artworkUrl, clsx } from '../utils/format'
@@ -42,6 +43,16 @@ export function NowPlayingBar() {
       await navigator.clipboard.writeText(url)
       setShared(true)
       setTimeout(() => setShared(false), 1800)
+    } catch {}
+  }
+
+  // The now-playing item only carries the album NAME, so resolve the album
+  // id on demand and navigate — makes the "· album" text clickable.
+  const goToAlbum = async () => {
+    if (!np?.id) return
+    try {
+      const { albumId } = await resolveTrackTargets(np.id)
+      if (albumId) navigate(`/album/${albumId}`)
     } catch {}
   }
 
@@ -116,7 +127,14 @@ export function NowPlayingBar() {
                     ) : (
                       np.artistName
                     )}
-                    {np.albumName && <span className="text-obsidian-400"> · {np.albumName}</span>}
+                    {np.albumName && (
+                      <>
+                        {' · '}
+                        <button onClick={goToAlbum} className="text-obsidian-400 hover:text-cream hover:underline">
+                          {np.albumName}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <button

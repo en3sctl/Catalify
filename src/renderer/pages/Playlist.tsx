@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Play, Shuffle, Pencil, Camera, Check, X, Share2 } from 'lucide-react'
+import { Play, Shuffle, Pencil, Camera, Check, X, Share2, ChevronDown } from 'lucide-react'
 import {
   addToLibraryPlaylist,
   getLibraryPlaylist,
@@ -49,6 +49,10 @@ export function Playlist() {
   const [shared, setShared] = useState(false)
   const [sharingBusy, setSharingBusy] = useState(false)
 
+  // ── Genre filter + sort (Spotify-style) ──
+  const [genreFilter, setGenreFilter] = useState<string | null>(null)
+  const [sortMode, setSortMode] = useState<SortMode>('default')
+
   useEffect(() => {
     if (!socialUser || !id) {
       setShared(false)
@@ -93,6 +97,31 @@ export function Playlist() {
   // Only the user's own library playlists can be edited / take new songs.
   const editable = isLibrary && attrs.canEdit !== false
 
+  // Distinct genres present in the playlist (most common first), for chips.
+  const genres = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of tracks) {
+      for (const g of t?.attributes?.genreNames ?? []) {
+        if (!g || g === 'Music') continue
+        counts.set(g, (counts.get(g) ?? 0) + 1)
+      }
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([g]) => g)
+  }, [tracks])
+
+  // The list actually rendered: genre-filtered then sorted.
+  const displayedTracks = useMemo(() => {
+    const arr = (genreFilter
+      ? tracks.filter((t: any) => (t?.attributes?.genreNames ?? []).includes(genreFilter))
+      : tracks.slice()) as any[]
+    const lower = (s: any) => String(s ?? '').toLowerCase()
+    if (sortMode === 'title') arr.sort((a, b) => lower(a?.attributes?.name).localeCompare(lower(b?.attributes?.name)))
+    else if (sortMode === 'artist') arr.sort((a, b) => lower(a?.attributes?.artistName).localeCompare(lower(b?.attributes?.artistName)))
+    else if (sortMode === 'album') arr.sort((a, b) => lower(a?.attributes?.albumName).localeCompare(lower(b?.attributes?.albumName)))
+    else if (sortMode === 'duration') arr.sort((a, b) => (b?.attributes?.durationInMillis ?? 0) - (a?.attributes?.durationInMillis ?? 0))
+    return arr
+  }, [tracks, genreFilter, sortMode])
+
   const existingIds = useMemo(
     () =>
       tracks
@@ -115,13 +144,14 @@ export function Playlist() {
   if (!playlist) return <div className="text-obsidian-400">Playlist not found.</div>
 
   const playFromHere = (startAt = 0) => {
-    // Queue from the post-explicit-filter list (see Album.tsx for why).
-    const ids: string[] = tracks
+    // Queue from the VISIBLE (genre-filtered + sorted) list so play matches
+    // exactly what the user sees.
+    const ids: string[] = displayedTracks
       .map((t: any) => t?.attributes?.playParams?.catalogId || t?.id || '')
       .filter(Boolean)
     if (ids.length === 0) return Promise.resolve()
     const artistMap: Record<string, string> = {}
-    for (const t of tracks) {
+    for (const t of displayedTracks) {
       const tid = t?.attributes?.playParams?.catalogId || t?.id
       const name = t?.attributes?.artistName
       if (tid && typeof name === 'string') artistMap[tid] = name
@@ -320,7 +350,7 @@ export function Playlist() {
                 onClick={() => {
                   setShuffle(true)
                   const startAt =
-                    tracks.length > 0 ? Math.floor(Math.random() * tracks.length) : 0
+                    displayedTracks.length > 0 ? Math.floor(Math.random() * displayedTracks.length) : 0
                   playFromHere(startAt).catch(console.error)
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/[0.06] text-white hover:bg-white/[0.1] transition"
@@ -357,8 +387,27 @@ export function Playlist() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-0.5 pt-4">
-        {tracks.map((t: any, i: number) => (
+      {/* Genre chips + sort (Spotify-style) */}
+      {(genres.length > 0 || tracks.length > 1) && (
+        <div className="flex items-center gap-2 flex-wrap pt-2">
+          {genres.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+              <Chip active={!genreFilter} onClick={() => setGenreFilter(null)}>
+                All
+              </Chip>
+              {genres.map((g) => (
+                <Chip key={g} active={genreFilter === g} onClick={() => setGenreFilter(genreFilter === g ? null : g)}>
+                  {g}
+                </Chip>
+              ))}
+            </div>
+          )}
+          <SortMenu mode={sortMode} onChange={setSortMode} />
+        </div>
+      )}
+
+      <div className="flex flex-col gap-0.5">
+        {displayedTracks.map((t: any, i: number) => (
           <TrackRow
             key={t.id + i}
             index={i}
@@ -366,6 +415,9 @@ export function Playlist() {
             onPlay={() => playFromHere(i).catch(console.error)}
           />
         ))}
+        {displayedTracks.length === 0 && (
+          <div className="text-obsidian-400 text-sm italic py-4">No tracks in this genre.</div>
+        )}
       </div>
 
       {/* Add more songs later — only for the user's own library playlists. */}
@@ -377,6 +429,80 @@ export function Playlist() {
             onAdd={onAddSong}
           />
         </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Genre filter + sort helpers ───────────────────────────── */
+
+type SortMode = 'default' | 'title' | 'artist' | 'album' | 'duration'
+
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'px-3 py-1 rounded-full text-[12px] font-medium transition whitespace-nowrap',
+        active
+          ? 'accent-bg text-obsidian-950'
+          : 'bg-white/[0.06] text-obsidian-200 hover:bg-white/[0.1] hover:text-cream',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+const SORTS: { v: SortMode; label: string }[] = [
+  { v: 'default', label: 'Playlist order' },
+  { v: 'title', label: 'Title' },
+  { v: 'artist', label: 'Artist' },
+  { v: 'album', label: 'Album' },
+  { v: 'duration', label: 'Duration' },
+]
+
+function SortMenu({ mode, onChange }: { mode: SortMode; onChange: (m: SortMode) => void }) {
+  const [open, setOpen] = useState(false)
+  const cur = SORTS.find((s) => s.v === mode) ?? SORTS[0]
+  return (
+    <div className="relative flex-shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.07] text-[12px] text-cream/85 transition"
+        title="Sort"
+      >
+        {cur.label} <ChevronDown size={13} className={open ? 'rotate-180 transition' : 'transition'} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 z-50 min-w-[170px] rounded-xl liquid-glass border border-white/[0.08] p-1 shadow-deep">
+            {SORTS.map((s) => (
+              <button
+                key={s.v}
+                onClick={() => {
+                  onChange(s.v)
+                  setOpen(false)
+                }}
+                className={clsx(
+                  'w-full text-left px-3 py-1.5 rounded-lg text-[12.5px] transition',
+                  s.v === mode ? 'accent-text bg-white/[0.04]' : 'text-cream/80 hover:bg-white/[0.05]',
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

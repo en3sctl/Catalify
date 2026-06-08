@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
 import { Check, ListMusic, Play, UserPlus } from 'lucide-react'
+import { FollowListModal } from '../components/FollowListModal'
 import {
   FriendUser,
   SharedPlaylist,
@@ -22,10 +24,12 @@ export function UserProfile() {
   const [playlists, setPlaylists] = useState<SharedPlaylist[]>([])
   const [following, setFollowing] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [modalWhich, setModalWhich] = useState<'followers' | 'following' | null>(null)
 
   useEffect(() => {
     if (!handle) return
     setLoading(true)
+    setModalWhich(null)
     getUserByHandle(handle)
       .then((u) => {
         setUser(u)
@@ -67,8 +71,23 @@ export function UserProfile() {
           <div className="mt-1.5 text-[15px] text-cream/55">@{user.handle}</div>
           {user.bio && <p className="mt-2 text-[13.5px] text-obsidian-300 max-w-lg">{user.bio}</p>}
           <div className="mt-3 flex items-center gap-5 text-[13px] text-obsidian-300">
-            <span><b className="text-cream">{user.followers ?? 0}</b> followers</span>
-            <span><b className="text-cream">{user.following ?? 0}</b> following</span>
+            {(() => {
+              const canView = !user.hideLists || user.isMe
+              const Count = ({ n, label, which }: { n: number; label: string; which: 'followers' | 'following' }) =>
+                canView ? (
+                  <button onClick={() => setModalWhich(which)} className="hover:text-cream transition">
+                    <b className="text-cream">{n}</b> {label}
+                  </button>
+                ) : (
+                  <span><b className="text-cream">{n}</b> {label}</span>
+                )
+              return (
+                <>
+                  <Count n={user.followers ?? 0} label="followers" which="followers" />
+                  <Count n={user.following ?? 0} label="following" which="following" />
+                </>
+              )
+            })()}
           </div>
           {!user.isMe && (
             <button
@@ -105,6 +124,12 @@ export function UserProfile() {
           </div>
         )}
       </section>
+
+      <AnimatePresence>
+        {modalWhich && (
+          <FollowListModal userId={user.id} which={modalWhich} onClose={() => setModalWhich(null)} />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

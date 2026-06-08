@@ -20,6 +20,7 @@ export interface SocialUser {
   avatarUrl: string | null
   bio: string | null
   createdAt: number
+  hideLists?: boolean
 }
 
 export const HANDLE_RE = /^[a-z0-9_]{2,20}$/
@@ -123,6 +124,7 @@ export async function updateProfile(patch: {
   displayName?: string
   bio?: string
   avatarUrl?: string
+  hideLists?: boolean
 }): Promise<SocialUser> {
   const d = await api('/me', { method: 'PATCH', body: JSON.stringify(patch) })
   await window.bombo.store.set('socialUser', d.user)
@@ -204,6 +206,24 @@ export async function getFollowing(): Promise<FriendUser[]> {
 export async function getFollowers(): Promise<FriendUser[]> {
   try {
     const d = await api('/me/followers')
+    return d.users ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getUserFollowers(id: number): Promise<FriendUser[]> {
+  try {
+    const d = await api(`/users/${id}/followers`)
+    return d.users ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getUserFollowing(id: number): Promise<FriendUser[]> {
+  try {
+    const d = await api(`/users/${id}/following`)
     return d.users ?? []
   } catch {
     return []
