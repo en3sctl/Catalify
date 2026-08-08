@@ -67,7 +67,16 @@ export function NotificationBell() {
                     <Avatar name={n.user.displayName || n.user.handle} src={n.user.avatarUrl} size={34} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[12.5px] text-cream">
-                        <b>{n.user.displayName}</b> started following you
+                        {n.type === 'react' ? (
+                          <>
+                            <b>{n.user.displayName}</b> reacted {n.emoji}
+                            {n.trackTitle ? ` to "${n.trackTitle}"` : ''}
+                          </>
+                        ) : (
+                          <>
+                            <b>{n.user.displayName}</b> started following you
+                          </>
+                        )}
                       </div>
                       <div className="text-[10.5px] text-cream/40">{timeAgo(n.at)}</div>
                     </div>

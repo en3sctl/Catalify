@@ -122,7 +122,7 @@ export function PlaylistSongAdder({ existingIds, seedArtistIds, onAdd }: Props) 
         const ids: string[] = []
         for (const aid of seedArtists) {
           try {
-            const { ids: rids } = await getRadioContinuation('', aid, exclude, 18)
+            const { ids: rids } = await getRadioContinuation('', aid, exclude, undefined, 18)
             ids.push(...rids)
           } catch {}
           if (ids.length >= 24) break

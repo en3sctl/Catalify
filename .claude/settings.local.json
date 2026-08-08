@@ -12,7 +12,27 @@
       "Bash(npx vite *)",
       "Bash(echo \"=== tsc exit: $? ===\")",
       "Bash(sed -n '40,60p' src/renderer/pages/Artist.tsx)",
-      "Bash(sed -n '24,45p' src/renderer/pages/Liked.tsx)"
+      "Bash(sed -n '24,45p' src/renderer/pages/Liked.tsx)",
+      "PowerShell(try { $r = Invoke-RestMethod -Uri \"https://api.github.com/repos/en3sctl/Catalify/releases/tags/v0.1.21\" -Headers @{ \"User-Agent\" = \"c\" }; [pscustomobject]@{ tag=$r.tag_name; assets=\\($r.assets|ForEach-Object{$_.name}\\) -join \", \" } | Format-List } catch { \"API error: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(try { $r = Invoke-RestMethod -Uri \"https://api.github.com/repos/en3sctl/Catalify/releases/tags/v0.1.20\" -Headers @{ \"User-Agent\" = \"c\" }; [pscustomobject]@{ tag=$r.tag_name; assets=\\($r.assets|ForEach-Object{$_.name}\\) -join \", \" } | Format-List } catch { \"API error: $\\($_.Exception.Message\\)\" })",
+      "PowerShell(try { $r = Invoke-RestMethod -Uri \"https://api.github.com/repos/en3sctl/Catalify/releases/tags/v0.1.19\" -Headers @{ \"User-Agent\" = \"c\" }; [pscustomobject]@{ tag=$r.tag_name; draft=$r.draft; assets=\\($r.assets|ForEach-Object{$_.name}\\) -join \", \" } | Format-List } catch { \"API error: $\\($_.Exception.Message\\)\" })",
+      "Bash(node -e \"const fs=require\\('fs'\\);const f='C:/Users/enes/AppData/Local/Temp/claude/c--Users-enes-Desktop-Enes-kodumun-projeleri-BomboMusic/f3ccdcbb-08b2-48d7-9ea2-632a304ad5cf/tasks/bgsh084o0.output';const L=fs.readFileSync\\(f,'utf8'\\).split\\(/\\\\r?\\\\n/\\);console.log\\(L.slice\\(-5\\).join\\('\\\\n'\\)\\)\")",
+      "PowerShell(try { $r = Invoke-RestMethod -Uri \"https://api.github.com/repos/en3sctl/Catalify/releases/tags/v0.1.18\" -Headers @{ \"User-Agent\" = \"c\" }; [pscustomobject]@{ tag=$r.tag_name; draft=$r.draft; assets=\\($r.assets|ForEach-Object{$_.name}\\) -join \", \" } | Format-List } catch { \"API error: $\\($_.Exception.Message\\)\" })",
+      "Bash(node -e \"const fs=require\\('fs'\\);const f='C:/Users/enes/AppData/Local/Temp/claude/c--Users-enes-Desktop-Enes-kodumun-projeleri-BomboMusic/f3ccdcbb-08b2-48d7-9ea2-632a304ad5cf/tasks/bi81vas14.output';const L=fs.readFileSync\\(f,'utf8'\\).split\\(/\\\\r?\\\\n/\\);console.log\\(L.slice\\(-6\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const f='C:/Users/enes/AppData/Local/Temp/claude/c--Users-enes-Desktop-Enes-kodumun-projeleri-BomboMusic/f3ccdcbb-08b2-48d7-9ea2-632a304ad5cf/tasks/b1f5wsmho.output';const L=fs.readFileSync\\(f,'utf8'\\).split\\(/\\\\r?\\\\n/\\);console.log\\(L.slice\\(-8\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const f='C:/Users/enes/AppData/Local/Temp/claude/c--Users-enes-Desktop-Enes-kodumun-projeleri-BomboMusic/f3ccdcbb-08b2-48d7-9ea2-632a304ad5cf/tasks/bbo53grre.output';const L=fs.readFileSync\\(f,'utf8'\\).split\\(/\\\\r?\\\\n/\\);console.log\\(L.slice\\(-11\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const f='C:/Users/enes/AppData/Local/Temp/claude/c--Users-enes-Desktop-Enes-kodumun-projeleri-BomboMusic/f3ccdcbb-08b2-48d7-9ea2-632a304ad5cf/tasks/bde61ayqv.output';console.log\\(fs.readFileSync\\(f,'utf8'\\).split\\(/\\\\r?\\\\n/\\).slice\\(-9\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{try{const a=JSON.parse\\(d\\).permissions.allow;console.log\\(a.length,'entries'\\)}catch\\(e\\){console.log\\('err',e.message\\)}}\\)\")",
+      "Bash(node -e \"const a=require\\('./.claude/settings.local.json'\\).permissions.allow;console.log\\(a.length,'entries'\\)\")",
+      "Bash(node -e \"const cur=new Set\\(require\\('./.claude/settings.local.json'\\).permissions.allow\\); const cp=require\\('child_process'\\).execSync\\('git show \\\\\"stash@{0}:.claude/settings.local.json\\\\\"'\\).toString\\(\\); const st=JSON.parse\\(cp\\).permissions.allow; const only=st.filter\\(x=>!cur.has\\(x\\)\\); console.log\\('stash-only:', JSON.stringify\\(only\\)\\); const curOnly=[...cur].filter\\(x=>!new Set\\(st\\).has\\(x\\)\\); console.log\\('current-only:', JSON.stringify\\(curOnly\\)\\)\")",
+      "Bash(node -p \"require\\('./package.json'\\).version\")",
+      "Bash(git checkout *)",
+      "Bash(git restore *)",
+      "Bash(git commit *)",
+      "Bash(node -e \"const b=require\\('./package.json'\\).build; console.log\\(JSON.stringify\\(b,null,2\\)\\)\")",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./package.json'\\).build.nsis,null,2\\)\\)\")",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('dist-electron/main/main.js','utf8'\\); const m=s.match\\(/quitAndInstall\\\\\\([^\\)]*\\\\\\)/\\); console.log\\(m && m[0]\\)\")",
+      "Bash(node --check catalify-api/src/index.js)"
     ]
   }
 }

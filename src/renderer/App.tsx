@@ -6,6 +6,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useSyncAndPresence } from './hooks/useSyncAndPresence'
 import { useUpdateNotifier } from './hooks/useUpdateNotifier'
 import { usePresenceBroadcast } from './hooks/usePresence'
+import { useListenAlong } from './hooks/useListenAlong'
 import { usePlayer } from './store/player'
 import { useSocial } from './store/social'
 import { useNotifications } from './store/notifications'
@@ -31,9 +32,11 @@ import { Friends } from './pages/Friends'
 import { UserProfile } from './pages/UserProfile'
 import { SharedPlaylist } from './pages/SharedPlaylist'
 import { Settings } from './pages/Settings'
+import { Stats } from './pages/Stats'
 import { Toasts } from './components/Toasts'
 import { UpdateBanner } from './components/UpdateBanner'
 import { FollowNotifications } from './components/FollowNotifications'
+import { OfflineBanner } from './components/OfflineBanner'
 import { ContextMenuProvider } from './components/ContextMenuProvider'
 import { LayoutGroup } from 'framer-motion'
 
@@ -57,6 +60,7 @@ function MainApp() {
     useSocial.getState().init()
   }, [])
   usePresenceBroadcast()
+  useListenAlong()
   const socialUserId = useSocial((s) => s.user?.id)
   useEffect(() => {
     if (socialUserId) useNotifications.getState().start()
@@ -112,6 +116,7 @@ function MainApp() {
                   <Route path="/u/:handle" element={<UserProfile />} />
                   <Route path="/shared/:userId/:pid" element={<SharedPlaylist />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/stats" element={<Stats />} />
                 </Routes>
               </LoginGate>
             </div>
@@ -120,6 +125,7 @@ function MainApp() {
           <Toasts />
           <UpdateBanner />
           <FollowNotifications />
+          <OfflineBanner />
         </div>
       </LayoutGroup>
     </ContextMenuProvider>

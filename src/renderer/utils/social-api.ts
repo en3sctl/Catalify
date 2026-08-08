@@ -13,6 +13,15 @@ import { shrinkDataUrl } from './image'
 
 const BASE = 'https://catalify-api.flair1-flair.workers.dev'
 
+export interface FavoriteItem {
+  /** Apple catalog id (artist or song). */
+  id: string
+  name: string
+  /** Song favorites carry the artist name for the subtitle line. */
+  artistName?: string
+  artUrl?: string | null
+}
+
 export interface SocialUser {
   id: number
   handle: string
@@ -21,6 +30,8 @@ export interface SocialUser {
   bio: string | null
   createdAt: number
   hideLists?: boolean
+  favoriteArtist?: FavoriteItem | null
+  favoriteSong?: FavoriteItem | null
 }
 
 export const HANDLE_RE = /^[a-z0-9_]{2,20}$/
@@ -36,6 +47,22 @@ async function getDeviceKey(): Promise<string> {
     await window.bombo.store.set('socialDeviceKey', k)
   }
   return k
+}
+
+/**
+ * Account recovery. The device key IS the account credential (server only
+ * stores its hash) — losing the device = losing the account. These two
+ * let the user copy the key out as a "recovery key" and paste it on a new
+ * install to log back into their handle.
+ */
+export async function exportDeviceKey(): Promise<string> {
+  return getDeviceKey()
+}
+
+export async function importDeviceKey(key: string): Promise<void> {
+  const k = key.trim().toLowerCase()
+  if (!/^[0-9a-f]{32,128}$/.test(k)) throw new Error('That doesn\'t look like a recovery key.')
+  await window.bombo.store.set('socialDeviceKey', k)
 }
 
 export async function getToken(): Promise<string | null> {
@@ -58,7 +85,34 @@ interface ApiError extends Error {
   code?: string
 }
 
-async function api(path: string, opts: RequestInit = {}): Promise<any> {
+/**
+ * Silent session refresh. The JWT lasts 30 days but the account lasts
+ * forever — when a token expires the device key can mint a new one
+ * without bothering the user. Single-flight so a burst of 401s (profile
+ * save + presence + notifications poll) logs in once, not four times.
+ */
+let reloginInFlight: Promise<boolean> | null = null
+
+async function tryRelogin(): Promise<boolean> {
+  if (!reloginInFlight) {
+    reloginInFlight = (async () => {
+      try {
+        const u = await getStoredUser()
+        if (!u?.handle) return false
+        await loginAccount(u.handle)
+        return true
+      } catch {
+        return false
+      } finally {
+        // Release after settle so a FUTURE expiry can refresh again.
+        setTimeout(() => { reloginInFlight = null }, 1000)
+      }
+    })()
+  }
+  return reloginInFlight
+}
+
+async function api(path: string, opts: RequestInit = {}, _retried = false): Promise<any> {
   const token = await getToken()
   const res = await fetch(BASE + path, {
     ...opts,
@@ -70,6 +124,11 @@ async function api(path: string, opts: RequestInit = {}): Promise<any> {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
+    // Expired token → re-login with the device key and retry once.
+    // /auth/* is excluded (that's the refresh path itself).
+    if (res.status === 401 && !_retried && !path.startsWith('/auth')) {
+      if (await tryRelogin()) return api(path, opts, true)
+    }
     const err: ApiError = new Error(data?.error || res.statusText)
     err.status = res.status
     err.code = data?.error
@@ -125,6 +184,8 @@ export async function updateProfile(patch: {
   bio?: string
   avatarUrl?: string
   hideLists?: boolean
+  favoriteArtist?: FavoriteItem | null
+  favoriteSong?: FavoriteItem | null
 }): Promise<SocialUser> {
   const d = await api('/me', { method: 'PATCH', body: JSON.stringify(patch) })
   await window.bombo.store.set('socialUser', d.user)
@@ -287,9 +348,19 @@ export interface FriendPresence {
 }
 
 export interface FollowNotification {
-  type: 'follow'
+  type: 'follow' | 'react'
   at: number
   user: { id: number; handle: string; displayName: string; avatarUrl: string | null }
+  /** react-only: which emoji, and what track it was about. */
+  emoji?: string
+  trackTitle?: string | null
+}
+
+export const REACTION_EMOJI = ['🔥', '❤️', '😂', '😭', '🤮', '🫡'] as const
+
+/** Send an emoji reaction to a friend's now-playing. */
+export async function reactToUser(id: number, emoji: string, trackTitle?: string | null): Promise<void> {
+  await api(`/users/${id}/react`, { method: 'POST', body: JSON.stringify({ emoji, trackTitle }) })
 }
 
 export async function getNotifications(): Promise<FollowNotification[]> {
@@ -340,4 +411,30 @@ export async function getUserPresence(id: number): Promise<UserPresence | null> 
   } catch {
     return null
   }
+}
+
+// ── Phase 8: taste + Blend ──
+
+export interface BlendResult {
+  /** Artist ids both users listen to (my ranking order). */
+  shared: string[]
+  mineOnly: string[]
+  theirsOnly: string[]
+  /** 0-100 taste overlap. */
+  matchPct: number
+  updatedAt: number
+}
+
+export async function putTaste(artistIds: string[]): Promise<void> {
+  await api('/me/taste', { method: 'PUT', body: JSON.stringify({ artistIds }) })
+}
+
+/**
+ * Fetch the artist-level blend with another user. Throws ApiError with
+ * code 'no_taste_me' / 'no_taste_them' when either side hasn't uploaded
+ * taste yet — callers surface that as "listen a bit more first".
+ */
+export async function getBlend(userId: number): Promise<BlendResult> {
+  const d = await api(`/blend/${userId}`)
+  return d.blend
 }

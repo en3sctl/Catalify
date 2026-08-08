@@ -1,6 +1,6 @@
 import { NavLink, Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Home, Search, Library, Heart, Radio, Users, ChevronRight } from 'lucide-react'
+import { Home, Search, Library, Heart, Radio, Users, ChevronRight, BarChart3 } from 'lucide-react'
 import { usePlayer } from '../store/player'
 import { useSocial } from '../store/social'
 import { authorize, playSongs } from '../utils/musickit-api'
@@ -16,6 +16,7 @@ const items = [
   { to: '/radio', label: 'Radio', icon: Radio },
   { to: '/liked', label: 'Liked', icon: Heart },
   { to: '/friends', label: 'Friends', icon: Users },
+  { to: '/stats', label: 'Stats', icon: BarChart3 },
 ]
 
 export function Sidebar() {

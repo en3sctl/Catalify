@@ -557,6 +557,204 @@ export async function getCatalogArtistsByIds(ids: string[]): Promise<any[]> {
 }
 
 /**
+ * Batch-fetch top songs for a set of catalog artists (Blend playlist
+ * builder). Returns song ids in artist-interleaved order (a1s1, a2s1,
+ * a3s1, a1s2, …) so two artists never stack back-to-back.
+ */
+export async function getArtistsTopSongs(
+  artistIds: string[],
+  perArtist = 3,
+): Promise<Array<{ id: string; artistName?: string }>> {
+  if (artistIds.length === 0) return []
+  const mk = getMusicKit()
+  const sf = await storefront()
+  const perArtistSongs: Array<Array<{ id: string; artistName?: string }>> = []
+  // Apple's batch artist endpoint with views is reliable at ~10 ids/call.
+  for (let i = 0; i < Math.min(artistIds.length, 30); i += 10) {
+    const batch = artistIds.slice(i, i + 10)
+    try {
+      const res = await mk.api.music(`/v1/catalog/${sf}/artists`, {
+        ids: batch.join(','),
+        views: 'top-songs',
+      })
+      for (const a of res.data?.data ?? []) {
+        const songs: any[] = (a?.views?.['top-songs']?.data ?? []).slice(0, perArtist)
+        perArtistSongs.push(
+          songs
+            .filter((s) => s?.id && !/^i\./i.test(String(s.id)))
+            .map((s) => ({ id: String(s.id), artistName: s?.attributes?.artistName })),
+        )
+      }
+    } catch (err) {
+      console.warn('[getArtistsTopSongs] batch failed', err)
+    }
+  }
+  const out: Array<{ id: string; artistName?: string }> = []
+  for (let round = 0; round < perArtist; round++) {
+    for (const list of perArtistSongs) {
+      if (list[round]) out.push(list[round])
+    }
+  }
+  return out
+}
+
+/**
+ * Latest releases from the artists the user follows, newest first.
+ * Batched `views=latest-release` lookups (10 artists/call), 6h cache —
+ * powers Home's "New from artists you follow" rail.
+ */
+let newReleasesCache: { at: number; key: string; albums: any[] } | null = null
+
+export async function getNewReleasesFromFollowed(days = 30): Promise<any[]> {
+  const SIX_H = 6 * 60 * 60 * 1000
+  try {
+    const { usePlayer } = await import('../store/player')
+    // Make sure the follows set is reconciled (incl. the one-time
+    // pollution purge) BEFORE reading it — Home's initial load used to
+    // race the purge, snapshot the dirty pre-purge list and cache it
+    // for 6 hours.
+    await usePlayer.getState().syncLibraryArtists().catch(() => {})
+    const artistIds = Object.keys(usePlayer.getState().librarySaved.artists).slice(0, 40)
+    if (artistIds.length === 0) return []
+    // Cache is keyed on the follows set so follow/unfollow invalidates it.
+    const key = artistIds.join(',')
+    if (newReleasesCache && newReleasesCache.key === key && Date.now() - newReleasesCache.at < SIX_H)
+      return newReleasesCache.albums
+    const mk = getMusicKit()
+    const sf = await storefront()
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    const albums: any[] = []
+    const seen = new Set<string>()
+    for (let i = 0; i < artistIds.length; i += 10) {
+      try {
+        const res = await mk.api.music(`/v1/catalog/${sf}/artists`, {
+          ids: artistIds.slice(i, i + 10).join(','),
+          views: 'latest-release',
+        })
+        for (const a of res.data?.data ?? []) {
+          for (const rel of a?.views?.['latest-release']?.data ?? []) {
+            const id = String(rel?.id ?? '')
+            const dateStr = rel?.attributes?.releaseDate
+            if (!id || seen.has(id) || !dateStr) continue
+            if (new Date(dateStr).getTime() < cutoff) continue
+            seen.add(id)
+            albums.push(rel)
+          }
+        }
+      } catch {}
+    }
+    albums.sort((a, b) =>
+      String(b?.attributes?.releaseDate ?? '').localeCompare(String(a?.attributes?.releaseDate ?? '')),
+    )
+    newReleasesCache = { at: Date.now(), key, albums }
+    return albums
+  } catch (err) {
+    console.warn('[getNewReleasesFromFollowed] failed', err)
+    return []
+  }
+}
+
+/**
+ * "My Mix" — the friend-Blend engine pointed at yourself. Candidates come
+ * from the artists you follow (their top songs) plus Apple's personal
+ * mixes; the local taste model (skip/completion affinity, love boosts,
+ * soft recency penalty) picks the 40 best and plays them. Returns false
+ * when there's nothing to build from yet.
+ */
+export async function playMyMix(): Promise<boolean> {
+  const { usePlayer } = await import('../store/player')
+  const { scoreCandidate } = await import('./taste')
+  const st = usePlayer.getState()
+  const artistIds = Object.keys(st.librarySaved.artists)
+  // Shuffle so each build samples a different slice of the followed set.
+  for (let i = artistIds.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[artistIds[i], artistIds[j]] = [artistIds[j], artistIds[i]]
+  }
+  const candidates: Array<{ id: string; artistName?: string; fromPersonalMix?: boolean }> = []
+  const seen = new Set<string>()
+  const push = (c: { id: string; artistName?: string; fromPersonalMix?: boolean; explicit?: boolean }) => {
+    if (!c.id || seen.has(c.id)) return
+    if (!st.allowExplicit && c.explicit) return
+    seen.add(c.id)
+    candidates.push({ id: c.id, artistName: c.artistName, fromPersonalMix: c.fromPersonalMix })
+  }
+  for (const s of await getArtistsTopSongs(artistIds.slice(0, 16), 3)) push(s)
+  try {
+    for (const s of await getPersonalMixCandidates()) push({ ...s, fromPersonalMix: true })
+  } catch {}
+  if (candidates.length === 0) return false
+
+  const ctx = { likedIds: st.likedIds, recentPlays: st.recentPlays }
+  const picked = candidates
+    .map((c) => ({ c, score: scoreCandidate(c, ctx) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 40)
+    .map((r) => r.c)
+  // Score selects, shuffle orders (same rule as the radio continuation).
+  for (let i = picked.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[picked[i], picked[j]] = [picked[j], picked[i]]
+  }
+  await playSongs(picked.map((c) => c.id), 0)
+  return true
+}
+
+/**
+ * Songs pulled from the user's OWN Apple personal mixes (Favorites Mix,
+ * New Music Mix, Discovery-adjacent editorial picks) via
+ * /v1/me/recommendations. These carry Apple's account-level collaborative
+ * filtering — the one signal we can't compute locally — so the radio
+ * continuation mixes them in as high-trust candidates. Cached for an hour;
+ * the mixes themselves only refresh daily/weekly on Apple's side.
+ */
+let personalMixCache: { at: number; songs: Array<{ id: string; artistName?: string; genres: string[]; explicit: boolean }> } | null = null
+
+export async function getPersonalMixCandidates(): Promise<
+  Array<{ id: string; artistName?: string; genres: string[]; explicit: boolean }>
+> {
+  const HOUR = 60 * 60 * 1000
+  if (personalMixCache && Date.now() - personalMixCache.at < HOUR) return personalMixCache.songs
+  try {
+    const mk = getMusicKit()
+    const recs = await getRecommendations(12)
+    const playlistIds: string[] = []
+    for (const rec of recs) {
+      const contents: any[] = rec?.relationships?.contents?.data ?? []
+      for (const item of contents) {
+        if (item?.type === 'playlists' && item?.id) playlistIds.push(String(item.id))
+      }
+    }
+    const songs: Array<{ id: string; artistName?: string; genres: string[]; explicit: boolean }> = []
+    const seen = new Set<string>()
+    // First 3 personal playlists are plenty (~75 tracks) and keeps this cheap.
+    for (const pid of playlistIds.slice(0, 3)) {
+      try {
+        const sf = await storefront()
+        const res = await mk.api.music(`/v1/catalog/${sf}/playlists/${pid}`, { include: 'tracks' })
+        const tracks: any[] = res.data?.data?.[0]?.relationships?.tracks?.data ?? []
+        for (const t of tracks) {
+          const id = String(t?.id ?? '')
+          if (!id || /^i\./i.test(id) || seen.has(id)) continue
+          seen.add(id)
+          songs.push({
+            id,
+            artistName: t?.attributes?.artistName,
+            genres: t?.attributes?.genreNames ?? [],
+            explicit: t?.attributes?.contentRating === 'explicit',
+          })
+        }
+      } catch {}
+    }
+    personalMixCache = { at: Date.now(), songs }
+    return songs
+  } catch (err) {
+    console.warn('[getPersonalMixCandidates] failed', err)
+    return personalMixCache?.songs ?? []
+  }
+}
+
+/**
  * Build a "keep the flow going" continuation pool of catalog song IDs
  * seeded from the CURRENTLY-PLAYING track, used by the player store to
  * extend the queue when the user's explicit list runs dry — instead of
@@ -574,6 +772,7 @@ export async function getRadioContinuation(
   seedSongId: string,
   seedArtistId: string | undefined,
   exclude: Set<string>,
+  ctx?: import('./taste').CandidateContext,
   limit = 18,
 ): Promise<{ ids: string[]; artistNames: Record<string, string> }> {
   const empty = { ids: [] as string[], artistNames: {} as Record<string, string> }
@@ -581,26 +780,42 @@ export async function getRadioContinuation(
     const mk = getMusicKit()
     const sf = await storefront()
 
+    // One fetch resolves both the artist id AND the seed's genres. Genres
+    // gate the similar-artist pool below — Apple's "similar artists" for
+    // niche/local acts routinely includes unrelated names, and taking
+    // their top songs blindly is how "hiç duymadığım garip şarkılar"
+    // ended up in the queue.
     let artistId = seedArtistId
-    if (!artistId && seedSongId && !/^i\./i.test(seedSongId)) {
-      artistId = (await resolveTrackTargets(seedSongId)).artistId
+    let seedGenres: string[] = []
+    if (seedSongId && !/^i\./i.test(seedSongId)) {
+      try {
+        const sres = await mk.api.music(`/v1/catalog/${sf}/songs/${seedSongId}`, {
+          include: 'artists',
+        })
+        const song = sres.data?.data?.[0]
+        if (!artistId) artistId = song?.relationships?.artists?.data?.[0]?.id
+        seedGenres = (song?.attributes?.genreNames ?? []).filter(
+          (g: string) => g && g !== 'Music' && g !== 'Müzik',
+        )
+      } catch {}
     }
     if (!artistId) return empty
 
-    // Lean fetch: the seed artist's top songs + its similar artists.
     const res = await mk.api.music(`/v1/catalog/${sf}/artists/${artistId}`, {
       views: 'top-songs,similar-artists',
     })
     const artist = res.data?.data?.[0]
-    const collected: any[] = [...(artist?.views?.['top-songs']?.data ?? [])]
+    // Cap the seed artist's own contribution — a full top-songs dump (~20)
+    // used to dominate the pool and made the continuation feel like the
+    // same artist on loop.
+    const collected: any[] = (artist?.views?.['top-songs']?.data ?? []).slice(0, 8)
 
-    // Pull a few songs from up to 3 similar artists in one batched call so
-    // the continuation isn't the same artist on loop. Best-effort — some
-    // storefronts omit the per-artist top-songs view on the batch endpoint.
+    // Wider similar-artist net (6 artists, 4 songs each) so the pool is
+    // bigger and more varied — the genre gate below keeps it coherent.
     const simIds: string[] = (artist?.views?.['similar-artists']?.data ?? [])
       .map((a: any) => String(a?.id ?? ''))
       .filter(Boolean)
-      .slice(0, 3)
+      .slice(0, 6)
     if (simIds.length) {
       try {
         const simRes = await mk.api.music(`/v1/catalog/${sf}/artists`, {
@@ -609,7 +824,7 @@ export async function getRadioContinuation(
         })
         for (const a of simRes.data?.data ?? []) {
           const songs: any[] = a?.views?.['top-songs']?.data ?? []
-          collected.push(...songs.slice(0, 6))
+          collected.push(...songs.slice(0, 4))
         }
       } catch {}
     }
@@ -621,25 +836,70 @@ export async function getRadioContinuation(
       allowExplicit = usePlayer.getState().allowExplicit
     } catch {}
 
-    const artistNames: Record<string, string> = {}
-    const ids: string[] = []
-    const seen = new Set<string>(exclude)
-    for (const s of collected) {
-      const id = String(s?.id ?? '')
-      if (!id || /^i\./i.test(id) || seen.has(id)) continue
-      if (!allowExplicit && s?.attributes?.contentRating === 'explicit') continue
-      seen.add(id)
-      ids.push(id)
-      const nm = s?.attributes?.artistName
-      if (typeof nm === 'string') artistNames[id] = nm
+    const genreMatches = (gs: string[]): boolean => {
+      if (seedGenres.length === 0) return true
+      if (gs.length === 0) return true
+      return gs.some((g) => seedGenres.includes(g))
     }
 
-    // Light shuffle so repeated continuations off the same artist vary.
-    for (let i = ids.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    // Normalise both pools into one candidate shape. Personal-mix songs
+    // carry Apple's account-level taste model; the artist pool carries
+    // "same vibe as what's playing". Genre gate applies to both so a
+    // Turkish seed doesn't pull the English half of Favorites Mix.
+    interface Candidate { id: string; artistName?: string; fromPersonalMix?: boolean }
+    const candidates: Candidate[] = []
+    const seen = new Set<string>(exclude)
+    const pushCandidate = (c: Candidate & { genres: string[]; explicit: boolean }) => {
+      if (!c.id || /^i\./i.test(c.id) || seen.has(c.id)) return
+      if (!allowExplicit && c.explicit) return
+      if (!genreMatches(c.genres)) return
+      seen.add(c.id)
+      candidates.push({ id: c.id, artistName: c.artistName, fromPersonalMix: c.fromPersonalMix })
     }
-    return { ids: ids.slice(0, limit), artistNames }
+    for (const s of collected) {
+      pushCandidate({
+        id: String(s?.id ?? ''),
+        artistName: s?.attributes?.artistName,
+        genres: s?.attributes?.genreNames ?? [],
+        explicit: s?.attributes?.contentRating === 'explicit',
+      })
+    }
+    try {
+      for (const s of await getPersonalMixCandidates()) {
+        pushCandidate({ ...s, fromPersonalMix: true })
+      }
+    } catch {}
+
+    // Rank by the local taste model (love boost, artist affinity from
+    // skip/completion history, personal-mix nudge, soft recency penalty).
+    // Without ctx (legacy callers) this degrades to jittered order.
+    const { scoreCandidate } = await import('./taste')
+    const scoreCtx = ctx ?? { likedIds: {}, recentPlays: {} }
+    const ranked = candidates
+      .map((c) => ({ c, score: scoreCandidate(c, scoreCtx) }))
+      .sort((a, b) => b.score - a.score)
+
+    // Score decides WHO gets in; a shuffle + adjacent-artist spread
+    // decides the ORDER, so the top-affinity artist doesn't play three
+    // of their songs back-to-back.
+    const picked = ranked.slice(0, limit).map((r) => r.c)
+    for (let i = picked.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[picked[i], picked[j]] = [picked[j], picked[i]]
+    }
+    for (let i = 1; i < picked.length - 1; i++) {
+      if (picked[i].artistName && picked[i].artistName === picked[i - 1].artistName) {
+        ;[picked[i], picked[i + 1]] = [picked[i + 1], picked[i]]
+      }
+    }
+
+    const artistNames: Record<string, string> = {}
+    const ids: string[] = []
+    for (const c of picked) {
+      ids.push(c.id)
+      if (typeof c.artistName === 'string') artistNames[c.id] = c.artistName
+    }
+    return { ids, artistNames }
   } catch (err) {
     console.warn('[getRadioContinuation] failed', err)
     return empty
@@ -657,6 +917,34 @@ export async function getRadioContinuation(
  * we still keep the local "following" state so the Profile page lights
  * up — sync will catch up next time the API works.
  */
+/**
+ * The artists the user has DELIBERATELY favorited (our Follow button →
+ * POST /v1/me/favorites, or the heart in Apple's own apps). This is the
+ * correct source for "Following" — /v1/me/library/artists is NOT: it
+ * contains every artist who has a single saved song, which is how
+ * "I never followed these people" ended up in New-releases/My Mix.
+ * Best-effort: [] when the endpoint is unavailable on the storefront.
+ */
+export async function getFavoriteArtists(limit = 200): Promise<string[] | null> {
+  const mk = getMusicKit()
+  try {
+    const res = await mk.api.music('/v1/me/favorites', {
+      types: 'artists',
+      limit: Math.min(limit, 100),
+    } as any)
+    const items: any[] = res?.data?.data ?? []
+    return items
+      .filter((it) => String(it?.type ?? '').includes('artist'))
+      .map((it) => String(it?.id ?? ''))
+      .filter((id) => id && !/^r\./i.test(id))
+  } catch (err: any) {
+    // null = "couldn't ask" (storefront doesn't support GET favorites);
+    // [] = "asked, user has none". Callers treat these differently.
+    console.warn('[MusicKit] /v1/me/favorites GET unavailable', err?.message || err)
+    return null
+  }
+}
+
 export async function favoriteArtist(id: string): Promise<void> {
   const mk = getMusicKit()
   await mk.api.music('/v1/me/favorites', { 'ids[artists]': id }, {
@@ -672,6 +960,31 @@ export async function unfavoriteArtist(id: string): Promise<void> {
 }
 
 // ——— Apple Music "Love" rating (syncs the ❤ with user's account) ———
+
+/**
+ * Which of these catalog song ids the user has loved/favorited on
+ * APPLE'S side (any device — iPhone lock screen, Music app star, or an
+ * old Çatalify heart). Our likedIds map is local-first; without this
+ * import a song favorited elsewhere shows no heart here. Batched GETs;
+ * unrated ids are simply absent from the response.
+ */
+export async function getLovedSongIds(ids: string[]): Promise<string[]> {
+  const mk = getMusicKit()
+  const catalog = [...new Set(ids.filter((id) => id && !/^i\./i.test(id)))]
+  const loved: string[] = []
+  for (let i = 0; i < Math.min(catalog.length, 400); i += 50) {
+    const chunk = catalog.slice(i, i + 50)
+    try {
+      const res = await mk.api.music('/v1/me/ratings/songs', { ids: chunk.join(',') })
+      for (const r of res.data?.data ?? []) {
+        if (r?.attributes?.value === 1 || r?.attributes?.value === 100) loved.push(String(r.id))
+      }
+    } catch {
+      // 404 = none of this chunk is rated; other errors → skip chunk.
+    }
+  }
+  return loved
+}
 
 export async function loveSong(songId: string): Promise<void> {
   const mk = getMusicKit()

@@ -12,6 +12,15 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: resolve(__dirname, 'index.html'),
+      output: {
+        // Split the heavyweight, rarely-changing libraries into their own
+        // chunks so app-code updates don't re-download the whole bundle
+        // and initial parse cost drops.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          motion: ['framer-motion'],
+        },
+      },
     },
     assetsInlineLimit: 0, // never inline the gif
   },

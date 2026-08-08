@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { extractDominantColor, rgbToCssTriplet, softenColor } from '../utils/color-extract'
+import { extractDominantColor, normalizeAccent, rgbToCssTriplet, softenColor } from '../utils/color-extract'
 import { usePlayer } from '../store/player'
 
 /**
@@ -12,8 +12,11 @@ export function useArtColors() {
   useEffect(() => {
     if (!art) return
     let cancelled = false
-    extractDominantColor(art).then((rgb) => {
+    extractDominantColor(art).then((raw) => {
       if (cancelled) return
+      // Clamp into the readable band — raw dominant colors from dark
+      // covers can be near-black, which made accent text/pills vanish.
+      const rgb = normalizeAccent(raw)
       const root = document.documentElement
       root.style.setProperty('--accent', rgbToCssTriplet(rgb))
       root.style.setProperty('--accent-soft', rgbToCssTriplet(softenColor(rgb, 0.6)))

@@ -4,6 +4,7 @@ import { usePlayer, NowPlayingItem } from '../store/player'
 import { artworkUrl } from '../utils/format'
 import { toast } from '../store/toast'
 import { diagnoseDRM } from '../utils/drm-check'
+import { loadTasteStats, recordListenOutcome } from '../utils/taste'
 
 function toNowPlaying(item: any): NowPlayingItem | null {
   if (!item) return null
@@ -52,11 +53,16 @@ export function useMusicKit() {
         if (!mounted) return
 
         // Restore persisted settings
-        const [vol, shuffle, repeat] = await Promise.all([
+        const [vol, shuffle, repeat, recentPlays] = await Promise.all([
           window.bombo.store.get<number>('volume'),
           window.bombo.store.get<boolean>('shuffle'),
           window.bombo.store.get<'none' | 'one' | 'all'>('repeat'),
+          window.bombo.store.get<Record<string, number>>('recentPlays'),
         ])
+        if (recentPlays && typeof recentPlays === 'object') {
+          usePlayer.setState({ recentPlays })
+        }
+        await loadTasteStats()
         if (typeof vol === 'number') {
           mk.volume = vol
           usePlayer.getState().setVolume(vol)
@@ -74,16 +80,40 @@ export function useMusicKit() {
 
         usePlayer.getState().setReady(true)
         usePlayer.getState().setAuthorized(!!mk.isAuthorized)
+        // Reconcile "Following" with Apple favorites at boot (also runs
+        // the one-time pollution purge) — Profile/Library visits re-run
+        // it but shouldn't be a precondition.
+        if (mk.isAuthorized) {
+          usePlayer.getState().syncLibraryArtists().catch(() => {})
+        }
+
+        // Listen-outcome tracking: when the track changes, judge how the
+        // PREVIOUS one ended (early skip = negative taste signal, full
+        // listen = positive). `lastProgressMs` is sampled from the same
+        // events that drive the progress bar, so it's accurate even when
+        // the change came from MusicKit itself.
+        let lastListen: { id: string; title?: string; artistName?: string; durationMs: number } | null = null
+        let lastProgressMs = 0
 
         const onNowPlayingChange = () => {
           const item = mk.nowPlayingItem
           const newNp = toNowPlaying(item)
+          if (lastListen && lastListen.id !== newNp?.id) {
+            recordListenOutcome({ ...lastListen, progressMs: lastProgressMs })
+          }
+          if (newNp?.id !== lastListen?.id) {
+            lastListen = newNp
+              ? { id: newNp.id, title: newNp.title, artistName: newNp.artistName, durationMs: newNp.durationMs }
+              : null
+            lastProgressMs = 0
+          }
           // Keep the client-side played/upNext stacks coherent with reality
           // BEFORE we flip nowPlaying, so advanceToTrack can still read
           // "previousId" from the store. This runs on both user-triggered
           // (next/previous/changeToMediaAtIndex) and MusicKit-auto advances.
           if (newNp?.id) {
             usePlayer.getState().advanceToTrack(newNp.id)
+            usePlayer.getState().recordPlay(newNp.id)
           }
           usePlayer.getState().setNowPlaying(newNp)
           usePlayer.getState().setDuration(item?.attributes?.durationInMillis ?? 0)
@@ -123,7 +153,9 @@ export function useMusicKit() {
           }
         }
         const onPlaybackTimeChange = ({ currentPlaybackTime }: { currentPlaybackTime: number }) => {
-          usePlayer.getState().setProgress(Math.round(currentPlaybackTime * 1000))
+          const ms = Math.round(currentPlaybackTime * 1000)
+          lastProgressMs = ms
+          usePlayer.getState().setProgress(ms)
         }
         const onAuthChange = () => {
           usePlayer.getState().setAuthorized(!!mk.isAuthorized)
@@ -190,7 +222,9 @@ export function useMusicKit() {
         // cheap (Zustand only re-renders slices that actually changed).
         progressTimer = window.setInterval(() => {
           if (mk.isPlaying) {
-            usePlayer.getState().setProgress(Math.round((mk.currentPlaybackTime ?? 0) * 1000))
+            const ms = Math.round((mk.currentPlaybackTime ?? 0) * 1000)
+            lastProgressMs = ms
+            usePlayer.getState().setProgress(ms)
           }
         }, 150)
 

@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { AtSign, Check, Loader2, Lock, Radio, Sparkles, X } from 'lucide-react'
 import { useSocial } from '../store/social'
-import { HANDLE_RE, SocialUser, getUserByHandle, handleAvailable } from '../utils/social-api'
+import {
+  FavoriteItem,
+  HANDLE_RE,
+  SocialUser,
+  exportDeviceKey,
+  getUserByHandle,
+  handleAvailable,
+  importDeviceKey,
+} from '../utils/social-api'
+import { FavoritesEditor } from './FavoritePicker'
 import { FollowListModal } from './FollowListModal'
 import { clsx } from '../utils/format'
 import { toast } from '../store/toast'
@@ -176,6 +185,84 @@ function ClaimForm({
             </button>
           )}
         </div>
+
+        <RecoveryRestore handle={handle} valid={valid} onLogin={onLogin} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * "New PC, old account" path: paste the recovery key exported from the
+ * old install, and log into the handle typed above. The key replaces this
+ * device's key locally; the server only ever compares hashes.
+ */
+function RecoveryRestore({
+  handle,
+  valid,
+  onLogin,
+}: {
+  handle: string
+  valid: boolean
+  onLogin: (handle: string) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const restore = async () => {
+    if (!valid) {
+      toast.info('Type your username first', 'Enter the handle you want to restore above.')
+      return
+    }
+    setBusy(true)
+    try {
+      await importDeviceKey(key)
+      await onLogin(handle)
+      toast.success('Account restored', `Welcome back, @${handle}`)
+    } catch (err: any) {
+      if (err?.status === 401) {
+        toast.error('Recovery failed', 'That key doesn\'t match this username.')
+      } else {
+        toast.error('Recovery failed', err?.message || String(err))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="text-left text-[12px] text-obsidian-400 hover:text-cream transition"
+      >
+        Moving from another PC? <span className="underline">Restore with a recovery key</span>
+      </button>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        value={key}
+        onChange={(e) => setKey(e.target.value)}
+        placeholder="Paste your recovery key"
+        className="rounded-xl px-3.5 py-2.5 bg-white/[0.04] border border-white/[0.07] focus:border-white/[0.16] outline-none text-[13px] text-cream placeholder:text-obsidian-500 font-mono transition"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={restore}
+          disabled={busy || key.trim().length < 32}
+          className="px-4 py-2 rounded-xl bg-white/[0.06] text-white text-[13px] hover:bg-white/[0.1] disabled:opacity-40 transition"
+        >
+          {busy ? 'Restoring…' : 'Restore account'}
+        </button>
+        <button
+          onClick={() => setOpen(false)}
+          className="px-3 py-2 rounded-xl text-[12.5px] text-obsidian-300 hover:text-cream transition"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   )
@@ -189,7 +276,13 @@ function ClaimedCard({
   onSignOut,
 }: {
   user: SocialUser
-  onUpdate: (patch: { displayName?: string; bio?: string; hideLists?: boolean }) => Promise<void>
+  onUpdate: (patch: {
+    displayName?: string
+    bio?: string
+    hideLists?: boolean
+    favoriteArtist?: FavoriteItem | null
+    favoriteSong?: FavoriteItem | null
+  }) => Promise<void>
   onSignOut: () => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
@@ -312,6 +405,31 @@ function ClaimedCard({
               label="Let others see my followers / following"
             />
           </div>
+          <button
+            onClick={async () => {
+              const key = await exportDeviceKey()
+              await navigator.clipboard.writeText(key)
+              toast.success(
+                'Recovery key copied',
+                'Save it somewhere safe (notes, password manager). It restores @' +
+                  user.handle +
+                  ' on a new PC.',
+              )
+            }}
+            className="mt-2.5 text-left text-[12px] text-obsidian-400 hover:text-cream transition"
+          >
+            <span className="underline">Copy recovery key</span> — restores your account on a new PC
+          </button>
+          <FavoritesEditor
+            favoriteArtist={user.favoriteArtist}
+            favoriteSong={user.favoriteSong}
+            onChange={(patch) =>
+              onUpdate(patch).then(
+                () => toast.info('Favorites updated'),
+                (err: any) => toast.error('Couldn\'t save favorite', err?.message || String(err)),
+              )
+            }
+          />
         </div>
       )}
 

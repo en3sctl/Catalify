@@ -20,14 +20,17 @@ import {
   getRotatingRecommendations,
   getLibraryPlaylists,
   getLibraryRecentlyAdded,
+  getNewReleasesFromFollowed,
   getLibrarySongs,
   isLibraryId,
   playAlbum,
   playLibraryAlbum,
   playLibraryPlaylist,
+  playMyMix,
   playPlaylist,
   playSongs,
 } from '../utils/musickit-api'
+import { toast } from '../store/toast'
 import { Rail } from '../components/Rail'
 import { MediaCard } from '../components/MediaCard'
 import { usePlayer } from '../store/player'
@@ -45,6 +48,7 @@ interface HomeData {
   chartSongs: any[]
   chartAlbums: any[]
   chartPlaylists: any[]
+  newReleases: any[]
 }
 
 const EMPTY: HomeData = {
@@ -57,6 +61,7 @@ const EMPTY: HomeData = {
   chartSongs: [],
   chartAlbums: [],
   chartPlaylists: [],
+  newReleases: [],
 }
 
 // 30 minutes — mirrors Apple Music's web client cadence. Charts move
@@ -79,6 +84,7 @@ export function Home() {
       getLibraryRecentlyAdded(12),
       getLibrarySongs(30),
       getCharts(['songs', 'albums', 'playlists'], 20),
+      getNewReleasesFromFollowed(30),
     ])
     const get = <T,>(i: number, fallback: T): T =>
       results[i].status === 'fulfilled' ? ((results[i] as any).value ?? fallback) : fallback
@@ -107,6 +113,7 @@ export function Home() {
       chartSongs: charts.songs,
       chartAlbums: charts.albums,
       chartPlaylists: charts.playlists,
+      newReleases: get(7, []),
     })
     setLastLoadedAt(Date.now())
     if (mode === 'initial') setLoading(false)
@@ -149,6 +156,7 @@ export function Home() {
       />
 
       <QuickShortcuts />
+      <MyMixCard />
       <HomeBody data={data} loading={loading} />
     </div>
   )
@@ -166,9 +174,21 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
   const playlists = useExplicitFilter<any>(data.playlists)
   const rotation = useExplicitFilter<any>(data.rotation)
   const recentlyAdded = useExplicitFilter<any>(data.recentlyAdded)
+  const newReleases = useExplicitFilter<any>(data.newReleases)
 
   return (
     <>
+      {newReleases.length > 0 && (
+        <Rail
+          title="New from artists you follow"
+          subtitle="Fresh releases from your people"
+          widthClass="w-48"
+        >
+          {newReleases.slice(0, 14).map((item) => (
+            <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
+          ))}
+        </Rail>
+      )}
       {recommendations.length > 0 && (
         <Rail
           title="Made for you"
@@ -556,6 +576,56 @@ function Hero({
         </div>
       </div>
     </motion.section>
+  )
+}
+
+/* ── My Mix ──────────────────────────────────────────────────── */
+
+/**
+ * The friend-Blend engine pointed at yourself: followed artists + Apple's
+ * personal mixes, ranked by the local taste model (it knows what you skip
+ * — Apple's own mixes don't). Hidden until the user follows artists.
+ */
+function MyMixCard() {
+  const followedCount = usePlayer((s) => Object.keys(s.librarySaved.artists).length)
+  const [busy, setBusy] = useState(false)
+  if (followedCount === 0) return null
+
+  const play = async () => {
+    setBusy(true)
+    try {
+      const ok = await playMyMix()
+      if (!ok) toast.info('My Mix is empty', 'Follow a few artists first — the mix builds from them.')
+    } catch (err: any) {
+      toast.error('Couldn\'t build My Mix', err?.message || String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl liquid-glass p-4 flex items-center gap-4">
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+        style={{ background: 'linear-gradient(135deg, rgb(var(--accent) / 0.8), rgb(var(--accent-soft) / 0.55))' }}
+      >
+        <Sparkles size={22} className="text-obsidian-950" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[15px] font-display font-bold text-cream">My Mix</div>
+        <p className="text-[12.5px] text-obsidian-300 mt-0.5 truncate">
+          Built from {followedCount} artists you follow — and it learns what you skip.
+        </p>
+      </div>
+      <button
+        onClick={play}
+        disabled={busy}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-full accent-bg text-obsidian-950 font-semibold text-[12.5px] hover:brightness-110 disabled:opacity-60 transition flex-shrink-0"
+      >
+        <Play size={13} fill="currentColor" />
+        {busy ? 'Mixing…' : 'Play'}
+      </button>
+    </div>
   )
 }
 

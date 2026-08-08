@@ -2,10 +2,9 @@ import { create } from 'zustand'
 import {
   addToLibrary,
   favoriteArtist,
-  getLibraryArtists,
+  getFavoriteArtists,
   getMusicKit,
   getRadioContinuation,
-  libraryArtistCatalogId,
   loveSong,
   unfavoriteArtist,
   unloveSong,
@@ -84,6 +83,27 @@ let extendInFlight = false
 // hand-off is seamless and we never hit genuine dead air at track-end.
 const QUEUE_REFILL_THRESHOLD = 2
 
+// Rolling play-history cap. In-session state (playedIds) resets on every
+// new context AND on app restart — this map persists across both and
+// feeds the taste scorer's soft recency penalty (utils/taste.ts).
+const RECENT_PLAYS_CAP = 600
+
+/**
+ * Linear volume ramp for the pause/play fade. ~16ms steps (one frame).
+ * Cheap and cancel-safe: a new fade simply overwrites mk.volume as it
+ * runs; last writer wins, and the store's volume value is the truth the
+ * next fade reads its target from.
+ */
+async function fadeVolume(mk: any, target: number, durationMs: number): Promise<void> {
+  const start = typeof mk.volume === 'number' ? mk.volume : target
+  if (Math.abs(start - target) < 0.01) { mk.volume = target; return }
+  const steps = Math.max(1, Math.round(durationMs / 16))
+  for (let i = 1; i <= steps; i++) {
+    mk.volume = start + ((target - start) * i) / steps
+    await new Promise((r) => setTimeout(r, 16))
+  }
+}
+
 async function setQueueWithTimeout(mk: any, songId: string, timeoutMs = 5000): Promise<void> {
   await Promise.race([
     mk.setQueue({ song: songId }),
@@ -128,6 +148,13 @@ interface PlayerState {
    * names for free. Used by `smartShuffle` to avoid artist clustering.
    */
   sourceArtists: Record<string, string>
+  /**
+   * Persistent id → lastPlayedAt(ms) map of everything that has started
+   * playing, capped at RECENT_PLAYS_CAP entries. Unlike `playedIds` it
+   * survives context re-seeds and app restarts; radio continuations
+   * exclude anything played within RECENT_PLAY_EXCLUDE_MS.
+   */
+  recentPlays: Record<string, number>
   sleepTimerMs: number | null
   likedIds: Record<string, boolean>
   /**
@@ -159,6 +186,12 @@ interface PlayerState {
   setSleepTimer: (minutes: number | null) => void
   toggleLike: (id: string) => void
   setLiked: (map: Record<string, boolean>) => void
+  /**
+   * Import Apple-side loves for these catalog ids into likedIds (additive
+   * only). Call when a track list renders so hearts reflect favorites
+   * made on other devices, not just clicks made in Çatalify.
+   */
+  syncLovedFor: (ids: string[]) => Promise<void>
   setAllowExplicit: (v: boolean) => void
   /**
    * Save / unsave a catalog item from the user's Apple Music library.
@@ -189,6 +222,8 @@ interface PlayerState {
    * update already aligned things.
    */
   advanceToTrack: (newId: string) => void
+  /** Stamp a track as played-now in the persistent history (see recentPlays). */
+  recordPlay: (id: string) => void
   /**
    * "Keep the flow going" — when the explicit queue is about to run dry,
    * top it up with same-vibe songs seeded off the CURRENT track's artist
@@ -252,6 +287,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   playbackQueue: [],
   playedIds: [],
   sourceArtists: {},
+  recentPlays: {},
   sleepTimerMs: null,
   likedIds: {},
   librarySaved: { albums: {}, artists: {} },
@@ -381,10 +417,24 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     })
   },
 
+  recordPlay: (id) => {
+    if (!id) return
+    const next = { ...get().recentPlays, [id]: Date.now() }
+    const keys = Object.keys(next)
+    if (keys.length > RECENT_PLAYS_CAP) {
+      keys
+        .sort((a, b) => next[a] - next[b])
+        .slice(0, keys.length - RECENT_PLAYS_CAP)
+        .forEach((k) => delete next[k])
+    }
+    set({ recentPlays: next })
+    window.bombo.store.set('recentPlays', next)
+  },
+
   extendQueue: async () => {
     if (extendInFlight) return
     const state = get()
-    const { playbackQueue, repeat, originalPlaylist, playedIds, nowPlaying } = state
+    const { playbackQueue, repeat, originalPlaylist, playedIds, nowPlaying, recentPlays, likedIds } = state
     // Don't radio-continue while looping — repeat 'all' re-seeds the source
     // and repeat 'one' replays the track; both own "what plays next".
     if (repeat !== 'none') return
@@ -402,6 +452,11 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
     extendInFlight = true
     try {
+      // Hard exclusion is only THIS session's context (already queued /
+      // played / in the source list). Cross-session repeats are handled
+      // by the taste scorer's soft recency penalty instead of a ban, so
+      // a thin candidate pool degrades to "yesterday's songs" rather
+      // than falling through to MusicKit's blind autoplay.
       const exclude = new Set<string>([
         ...playbackQueue.map((it) => it.id),
         ...playedIds,
@@ -411,6 +466,7 @@ export const usePlayer = create<PlayerState>((set, get) => ({
         seedId,
         nowPlaying?.artistId,
         exclude,
+        { likedIds, recentPlays },
       )
       if (ids.length === 0) return
       // Re-read state — the user may have changed tracks during the fetch.
@@ -448,6 +504,22 @@ export const usePlayer = create<PlayerState>((set, get) => ({
     )
   },
   setLiked: (map) => set({ likedIds: map }),
+  syncLovedFor: async (ids) => {
+    try {
+      const { getLovedSongIds } = await import('../utils/musickit-api')
+      const loved = await getLovedSongIds(ids)
+      if (loved.length === 0) return
+      const cur = get().likedIds
+      const fresh = loved.filter((id) => !cur[id])
+      if (fresh.length === 0) return
+      const next = { ...cur }
+      for (const id of fresh) next[id] = true
+      set({ likedIds: next })
+      window.bombo.store.set('likedIds', next)
+    } catch (err) {
+      console.warn('[syncLovedFor] failed', err)
+    }
+  },
   setAllowExplicit: (v) => {
     set({ allowExplicit: v })
     window.bombo.store.set('settings.allowExplicit', v)
@@ -559,18 +631,38 @@ export const usePlayer = create<PlayerState>((set, get) => ({
 
   syncLibraryArtists: async () => {
     try {
-      const arts = await getLibraryArtists(300)
-      if (!arts?.length) return
-      const add: Record<string, boolean> = {}
-      for (const a of arts) {
-        const id = libraryArtistCatalogId(a)
-        if (id) add[id] = true
-      }
+      // Source of truth = Apple FAVORITES (deliberate follows), NOT
+      // /v1/me/library/artists. The old union from library artists put
+      // every artist with ONE saved song into "Following" (users saw
+      // 291 "followed" artists they never followed), polluting New
+      // releases / My Mix / Blend taste.
+      //   favorites readable → REPLACE the set with them (even if empty).
+      //   favorites unreadable (null) → one-time purge to {} (flagged),
+      //   because the polluted set is worse than an empty one; follows
+      //   made in-app keep accumulating locally afterwards.
+      const favIds = await getFavoriteArtists(200)
+      const purged = await window.bombo.store.get<boolean>('followsPurgeV2')
       const cur = get().librarySaved
-      const mergedArtists = { ...cur.artists, ...add }
-      // No genuinely-new ids → skip the write/render churn.
-      if (Object.keys(mergedArtists).length === Object.keys(cur.artists).length) return
-      const next = { ...cur, artists: mergedArtists }
+      let artists: Record<string, boolean>
+      if (!purged) {
+        // One-time cleanup: REBUILD from favorites alone (or empty when
+        // favorites is unreadable) — flushes the old library pollution.
+        artists = {}
+        for (const id of favIds ?? []) artists[id] = true
+        window.bombo.store.set('followsPurgeV2', true)
+      } else if (favIds !== null) {
+        // Post-purge: UNION favorites into local. Local entries are all
+        // deliberate now, and some may be "local only" (storefronts where
+        // the favorites POST fails) — never wipe those.
+        artists = { ...cur.artists }
+        for (const id of favIds) artists[id] = true
+      } else {
+        return
+      }
+      const curKeys = Object.keys(cur.artists)
+      const nextKeys = Object.keys(artists)
+      if (curKeys.length === nextKeys.length && curKeys.every((k) => artists[k])) return
+      const next = { ...cur, artists }
       set({ librarySaved: next })
       window.bombo.store.set('librarySaved', next)
     } catch (err) {
@@ -579,10 +671,26 @@ export const usePlayer = create<PlayerState>((set, get) => ({
   },
 
   play: async () => {
-    try { await getMusicKit().play() } catch (e) { console.error(e) }
+    try {
+      const mk = getMusicKit()
+      // Fade-in: start silent, ramp to the user's volume. Reads as
+      // "smooth" instead of the hard attack MusicKit gives by default.
+      const target = get().volume
+      mk.volume = 0
+      await mk.play()
+      await fadeVolume(mk, target, 220)
+    } catch (e) { console.error(e) }
   },
   pause: async () => {
-    try { await getMusicKit().pause() } catch (e) { console.error(e) }
+    try {
+      const mk = getMusicKit()
+      const prev = get().volume
+      await fadeVolume(mk, 0, 180)
+      await mk.pause()
+      // Restore immediately post-pause so external play paths (media
+      // keys, mini-player) that don't run our fade still get full volume.
+      mk.volume = prev
+    } catch (e) { console.error(e) }
   },
   toggle: async () => {
     const { isPlaying } = get()

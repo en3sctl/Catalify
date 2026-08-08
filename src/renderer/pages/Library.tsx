@@ -147,8 +147,14 @@ export function Library() {
       const t = typeof raw === 'string' ? Date.parse(raw) : Number(raw)
       return Number.isFinite(t) ? t : 0
     }
+    // Apple's auto-maintained "Favourite Songs" playlist is the one list
+    // people open constantly — pin it to the front regardless of sort.
+    const isFavourites = (item: any) =>
+      /^favou?rite songs$/i.test(String(item?.attributes?.name ?? '').trim())
     const arr = source.filter(matchesQuery).slice()
     arr.sort((a, b) => {
+      const pin = Number(isFavourites(b)) - Number(isFavourites(a))
+      if (pin !== 0) return pin
       const ka = sortKey(a)
       const kb = sortKey(b)
       if (sort === 'alpha') return String(ka).localeCompare(String(kb))

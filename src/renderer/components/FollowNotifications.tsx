@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { UserPlus, X } from 'lucide-react'
+import { Smile, UserPlus, X } from 'lucide-react'
 import { useSocial } from '../store/social'
 import { useNotifications } from '../store/notifications'
 import { FollowNotification } from '../utils/social-api'
@@ -76,11 +76,22 @@ export function FollowNotifications() {
             </button>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 accent-text">
-                <UserPlus size={12} />
-                <span className="text-[10px] uppercase tracking-[0.1em] font-semibold">New follower</span>
+                {n.type === 'react' ? <Smile size={12} /> : <UserPlus size={12} />}
+                <span className="text-[10px] uppercase tracking-[0.1em] font-semibold">
+                  {n.type === 'react' ? 'Reaction' : 'New follower'}
+                </span>
               </div>
               <div className="truncate text-[12.5px] text-cream mt-0.5">
-                <b>{n.user.displayName}</b> started following you
+                {n.type === 'react' ? (
+                  <>
+                    <b>{n.user.displayName}</b> reacted {n.emoji}
+                    {n.trackTitle ? ` to "${n.trackTitle}"` : ''}
+                  </>
+                ) : (
+                  <>
+                    <b>{n.user.displayName}</b> started following you
+                  </>
+                )}
               </div>
             </div>
             <button

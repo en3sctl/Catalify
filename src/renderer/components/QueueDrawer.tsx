@@ -32,27 +32,45 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
   const immersive = location.pathname === '/now-playing'
 
   const allIds = playbackQueue.map((it) => it.id)
+  // Every id we've already requested — successful OR not. Without this,
+  // any id the catalog can't resolve (region-pulled track, >300-item
+  // queue exceeding the batch cap) stayed "missing" forever and the
+  // effect refetched in a tight loop → the app-wide freeze on open.
+  const attemptedRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!open) return
-    const missing = allIds.filter((id) => !songMeta[id] && !/^i\./i.test(id))
+    const missing = allIds.filter(
+      (id) => !songMeta[id] && !/^i\./i.test(id) && !attemptedRef.current.has(id),
+    )
     if (missing.length === 0) return
+    missing.forEach((id) => attemptedRef.current.add(id))
     let cancelled = false
-    getCatalogSongsByIds(missing)
-      .then((songs) => {
+    ;(async () => {
+      const add: Record<string, any> = {}
+      // getCatalogSongsByIds caps at 300 per call — chunk long queues.
+      for (let i = 0; i < missing.length; i += 300) {
+        try {
+          const songs = await getCatalogSongsByIds(missing.slice(i, i + 300))
+          for (const s of songs) add[s.id] = s
+        } catch {}
         if (cancelled) return
-        const add: Record<string, any> = {}
-        for (const s of songs) add[s.id] = s
-        setSongMeta((prev) => ({ ...prev, ...add }))
-      })
-      .catch(() => {})
+      }
+      if (Object.keys(add).length > 0) setSongMeta((prev) => ({ ...prev, ...add }))
+    })()
     return () => {
       cancelled = true
     }
-  }, [open, allIds.join('|'), songMeta])
+  }, [open, allIds.join('|')])
 
   const currentItem = playbackQueue[0]
-  const upcoming = optimisticUpcoming ?? playbackQueue.slice(1)
+  // Rendering hundreds of framer-motion Reorder rows locks the main
+  // thread (the other half of the freeze). 120 is more than anyone
+  // scrolls through; the header count still shows the real total.
+  const RENDER_CAP = 120
+  const fullUpcoming = optimisticUpcoming ?? playbackQueue.slice(1)
+  const upcoming = fullUpcoming.slice(0, RENDER_CAP)
+  const hiddenCount = fullUpcoming.length - upcoming.length
 
   const toModel = (it: QueueItem, idx: number): QueueItemModel => {
     const s = songMeta[it.id]
@@ -87,7 +105,10 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
     const committed = optimisticUpcoming
     setOptimisticUpcoming(null)
     if (committed && currentItem) {
-      usePlayer.setState({ playbackQueue: [currentItem, ...committed] })
+      // Re-attach the un-rendered tail (beyond RENDER_CAP) so reordering
+      // the visible slice can't silently truncate a long queue.
+      const tail = (usePlayer.getState().playbackQueue.slice(1)).slice(RENDER_CAP)
+      usePlayer.setState({ playbackQueue: [currentItem, ...committed, ...tail] })
     }
     dragSnapshotRef.current = null
   }
@@ -151,8 +172,8 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
               <div className="flex items-center gap-2">
                 <ListMusic size={16} className="accent-text" />
                 <h3 className="text-sm font-semibold tracking-tight">Sıradakiler</h3>
-                {upcomingModels.length > 0 && (
-                  <span className="text-[11px] text-obsidian-400 ml-1">{upcomingModels.length}</span>
+                {fullUpcoming.length > 0 && (
+                  <span className="text-[11px] text-obsidian-400 ml-1">{fullUpcoming.length}</span>
                 )}
               </div>
               <button onClick={onClose} className="text-obsidian-300 hover:text-white">
@@ -203,6 +224,11 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
                     />
                   ))}
                 </Reorder.Group>
+              )}
+              {hiddenCount > 0 && (
+                <div className="px-4 py-3 text-[11.5px] text-obsidian-400 text-center">
+                  +{hiddenCount} more in queue
+                </div>
               )}
             </div>
           </motion.aside>

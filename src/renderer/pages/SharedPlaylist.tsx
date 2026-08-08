@@ -48,7 +48,14 @@ export function SharedPlaylist() {
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-col md:flex-row gap-6 items-end">
-        <Artwork src={artLarge} size="xl" rounded="lg" alt={pl.title} className="w-56 h-56 shadow-glow" />
+        <Artwork
+          src={artLarge}
+          fallbackSrc={artworkUrl(tracks[0]?.attributes?.artwork?.url, 600)}
+          size="xl"
+          rounded="lg"
+          alt={pl.title}
+          className="w-56 h-56 shadow-glow"
+        />
         <div className="flex-1 min-w-0">
           <div className="text-[12px] uppercase tracking-widest text-obsidian-300">Shared playlist</div>
           <h1 className="mt-1 text-4xl md:text-5xl font-display font-semibold leading-tight">{pl.title || 'Playlist'}</h1>

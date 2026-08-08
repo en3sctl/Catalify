@@ -97,6 +97,48 @@ export function rgbToCssTriplet(c: RGB): string {
   return `${c.r} ${c.g} ${c.b}`
 }
 
+/**
+ * Clamp an extracted accent into the readable band for a dark UI.
+ * Dominant-color extraction happily returns near-black maroons or muddy
+ * browns from dark covers; used as `--accent` those made text and pills
+ * unreadable ("renk bug'ı"). Converts to HSL, forces lightness into
+ * [0.55, 0.74] and saturation to ≥0.35, converts back.
+ */
+export function normalizeAccent(c: RGB): RGB {
+  const r = c.r / 255, g = c.g / 255, b = c.b / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h = 0
+  const l = (max + min) / 2
+  const d = max - min
+  let s = 0
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1))
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const L = Math.min(0.74, Math.max(0.55, l))
+  const S = Math.min(0.9, Math.max(0.35, s))
+  // HSL → RGB
+  const C = (1 - Math.abs(2 * L - 1)) * S
+  const X = C * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = L - C / 2
+  let rp = 0, gp = 0, bp = 0
+  if (h < 60) { rp = C; gp = X }
+  else if (h < 120) { rp = X; gp = C }
+  else if (h < 180) { gp = C; bp = X }
+  else if (h < 240) { gp = X; bp = C }
+  else if (h < 300) { rp = X; bp = C }
+  else { rp = C; bp = X }
+  return {
+    r: Math.round((rp + m) * 255),
+    g: Math.round((gp + m) * 255),
+    b: Math.round((bp + m) * 255),
+  }
+}
+
 export function softenColor(c: RGB, factor = 0.55): RGB {
   return {
     r: Math.round(c.r * factor + 255 * (1 - factor) * 0.3),

@@ -85,6 +85,17 @@ export function Playlist() {
   const tracks = useExplicitFilter<any>(allTracks)
   const attrs = playlist?.attributes ?? {}
 
+  // Import Apple-side loves for this list so hearts reflect favorites
+  // made on other devices (e.g. songs starred on the phone show ❤ here).
+  useEffect(() => {
+    if (allTracks.length === 0) return
+    const ids = allTracks
+      .map((t: any) => t?.attributes?.playParams?.catalogId || t?.id)
+      .filter(Boolean)
+      .map(String)
+    usePlayer.getState().syncLovedFor(ids)
+  }, [allTracks])
+
   // Local overrides win over Apple's values everywhere they're shown.
   const displayName = meta?.name ?? attrs.name ?? ''
   const displayDescription = meta?.description ?? attrs.description?.short ?? ''

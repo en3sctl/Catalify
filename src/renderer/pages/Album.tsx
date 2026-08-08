@@ -32,6 +32,16 @@ export function Album() {
   const allTracks = useMemo(() => album?.relationships?.tracks?.data ?? [], [album])
   const tracks = useExplicitFilter<any>(allTracks)
   const attrs = album?.attributes ?? {}
+
+  // Import Apple-side loves so hearts match favorites made on any device.
+  useEffect(() => {
+    if (allTracks.length === 0) return
+    const ids = allTracks
+      .map((t: any) => t?.attributes?.playParams?.catalogId || t?.id)
+      .filter(Boolean)
+      .map(String)
+    usePlayer.getState().syncLovedFor(ids)
+  }, [allTracks])
   const artLarge = artworkUrl(attrs.artwork?.url, 600)
   const artistId =
     album?.relationships?.artists?.data?.[0]?.id ||
