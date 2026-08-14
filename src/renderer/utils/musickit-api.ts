@@ -623,7 +623,11 @@ export async function getNewReleasesFromFollowed(days = 30): Promise<any[]> {
     const mk = getMusicKit()
     const sf = await storefront()
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-    const albums: any[] = []
+    // Collect every latest-release first, then filter — so when the strict
+    // window leaves the rail nearly empty (small follow set × one release
+    // per artist), we can backfill with the newest older releases instead
+    // of showing a single lonely card.
+    const all: any[] = []
     const seen = new Set<string>()
     for (let i = 0; i < artistIds.length; i += 10) {
       try {
@@ -636,16 +640,18 @@ export async function getNewReleasesFromFollowed(days = 30): Promise<any[]> {
             const id = String(rel?.id ?? '')
             const dateStr = rel?.attributes?.releaseDate
             if (!id || seen.has(id) || !dateStr) continue
-            if (new Date(dateStr).getTime() < cutoff) continue
             seen.add(id)
-            albums.push(rel)
+            all.push(rel)
           }
         }
       } catch {}
     }
-    albums.sort((a, b) =>
+    all.sort((a, b) =>
       String(b?.attributes?.releaseDate ?? '').localeCompare(String(a?.attributes?.releaseDate ?? '')),
     )
+    let albums = all.filter((rel) => new Date(rel?.attributes?.releaseDate).getTime() >= cutoff)
+    const MIN_FILL = 6
+    if (albums.length < MIN_FILL) albums = all.slice(0, Math.max(albums.length, Math.min(MIN_FILL, all.length)))
     newReleasesCache = { at: Date.now(), key, albums }
     return albums
   } catch (err) {

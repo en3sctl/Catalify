@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { usePlayer } from '../store/player'
+import { useSettings } from '../store/settings'
 import { artworkUrl as artUrl } from '../utils/format'
 
 /**
@@ -17,7 +18,10 @@ import { artworkUrl as artUrl } from '../utils/format'
  */
 export function BackdropAura() {
   const art = usePlayer((s) => s.nowPlaying?.artworkUrl)
-  const url = art ? artUrl(art, 1200) : undefined
+  const theme = useSettings((s) => s.theme)
+  // Only the adaptive theme paints the blurred artwork; dark/light stay
+  // on their flat base fill (bg-obsidian-950 flips via the theme vars).
+  const url = theme === 'adaptive' && art ? artUrl(art, 1200) : undefined
 
   return (
     <div
@@ -73,14 +77,17 @@ export function BackdropAura() {
         }}
       />
 
-      {/* Bottom darken so the now-playing bar has contrast against the wash. */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(180deg, rgba(6,4,12,0) 35%, rgba(6,4,12,0.55) 100%)',
-        }}
-      />
+      {/* Bottom darken so the now-playing bar has contrast against the wash.
+          Skipped in light theme — a black gradient over paper reads as dirt. */}
+      {theme !== 'light' && (
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(6,4,12,0) 35%, rgba(6,4,12,0.55) 100%)',
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -5,29 +5,31 @@ module.exports = {
     extend: {
       colors: {
         // Warm lo-fi darks — purple/plum undertones rather than pure black.
+        // All theme-able colors route through CSS variables (globals.css
+        // :root / [data-theme="light"]) so the light theme is a pure
+        // variable swap — including `white`/`black`, which flip to ink /
+        // paper so the ubiquitous bg-white/[0.0x] washes keep working.
         obsidian: {
-          950: '#0a0812',   // body bg
-          900: '#110d1a',   // one step up
-          800: '#191322',   // cards
-          700: '#221a2d',
-          600: '#2d2439',
-          500: '#3a2f48',
-          // 400/300 are the "secondary text" tones used across the app
-          // (Clear all, X chip removers, helper labels). Bumped lighter +
-          // warmer than the original plum-grays so they stay legible on
-          // top of the dynamic per-track BackdropAura wash, regardless of
-          // whether the current artwork is dark or bright.
-          400: '#9b94a3',
-          300: '#bab3bd',
-          200: '#c5bfc9',
-          100: '#ece6dc',   // warm cream — primary text
+          950: 'rgb(var(--ob-950) / <alpha-value>)',   // body bg
+          900: 'rgb(var(--ob-900) / <alpha-value>)',   // one step up
+          800: 'rgb(var(--ob-800) / <alpha-value>)',   // cards
+          700: 'rgb(var(--ob-700) / <alpha-value>)',
+          600: 'rgb(var(--ob-600) / <alpha-value>)',
+          500: 'rgb(var(--ob-500) / <alpha-value>)',
+          // 400/300 are the "secondary text" tones used across the app.
+          400: 'rgb(var(--ob-400) / <alpha-value>)',
+          300: 'rgb(var(--ob-300) / <alpha-value>)',
+          200: 'rgb(var(--ob-200) / <alpha-value>)',
+          100: 'rgb(var(--ob-100) / <alpha-value>)',   // warm cream — primary text
         },
         accent: {
           DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
           soft: 'rgb(var(--accent-soft) / <alpha-value>)',
         },
-        cream: '#ece6dc',
-        dusk: '#0a0812',
+        cream: 'rgb(var(--cream) / <alpha-value>)',
+        dusk: 'rgb(var(--ob-950) / <alpha-value>)',
+        white: 'rgb(var(--white) / <alpha-value>)',
+        black: 'rgb(var(--black) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['Geist', 'system-ui', 'sans-serif'],

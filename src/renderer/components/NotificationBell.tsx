@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { useNotifications } from '../store/notifications'
 import { Avatar } from './UserRow'
 import { timeAgo } from '../utils/format'
+import { useT } from '../i18n'
 
 /** Sidebar notification bell + history panel (follows for now). Shows an
  *  unseen badge; opening the panel marks everything seen. */
@@ -15,11 +17,15 @@ export function NotificationBell() {
   const markSeen = useNotifications((s) => s.markSeen)
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const t = useT()
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
 
   if (!ready) return null
 
   const toggle = () => {
     const next = !open
+    if (next && btnRef.current) setAnchor(btnRef.current.getBoundingClientRect())
     setOpen(next)
     if (next) markSeen()
   }
@@ -27,9 +33,10 @@ export function NotificationBell() {
   return (
     <div className="relative flex-shrink-0">
       <button
+        ref={btnRef}
         onClick={toggle}
         className="relative w-9 h-9 rounded-xl flex items-center justify-center text-obsidian-300 hover:text-cream hover:bg-white/[0.06] transition"
-        title="Notifications"
+        title={t('notifications')}
       >
         <Bell size={17} />
         {unseen > 0 && (
@@ -38,22 +45,32 @@ export function NotificationBell() {
           </span>
         )}
       </button>
-      <AnimatePresence>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.97 }}
-              transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-              className="absolute bottom-full mb-2 left-0 z-50 w-[280px] max-h-[340px] overflow-y-auto rounded-2xl liquid-glass border border-white/[0.08] shadow-deep p-2"
-            >
+      {/* Portaled to <body>: inside the blurred Sidebar the panel's glass
+          backdrop-filter is a no-op (ancestor backdrop root) and it rendered
+          near-transparent. As a top-level sibling it samples the real page —
+          identical surface to the QueueDrawer. Animation unchanged. */}
+      {anchor &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                  transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+                  className="fixed z-50 w-[280px] max-h-[340px] overflow-y-auto rounded-2xl glass shadow-deep p-2"
+                  style={{
+                    left: anchor.left,
+                    bottom: window.innerHeight - anchor.top + 8,
+                  }}
+                >
               <div className="px-2 py-1.5 text-[11px] uppercase tracking-[0.14em] text-cream/40 font-semibold">
-                Notifications
+                {t('notifications')}
               </div>
               {items.length === 0 ? (
-                <div className="px-3 py-6 text-center text-obsidian-400 text-sm">Nothing yet.</div>
+                <div className="px-3 py-6 text-center text-obsidian-400 text-sm">{t('nothingYet')}</div>
               ) : (
                 items.map((n) => (
                   <button
@@ -69,12 +86,12 @@ export function NotificationBell() {
                       <div className="truncate text-[12.5px] text-cream">
                         {n.type === 'react' ? (
                           <>
-                            <b>{n.user.displayName}</b> reacted {n.emoji}
-                            {n.trackTitle ? ` to "${n.trackTitle}"` : ''}
+                            <b>{n.user.displayName}</b> {t('reactedTo')} {n.emoji}
+                            {n.trackTitle ? ` — "${n.trackTitle}"` : ''}
                           </>
                         ) : (
                           <>
-                            <b>{n.user.displayName}</b> started following you
+                            <b>{n.user.displayName}</b> {t('startedFollowing')}
                           </>
                         )}
                       </div>
@@ -83,10 +100,12 @@ export function NotificationBell() {
                   </button>
                 ))
               )}
-            </motion.div>
-          </>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   )
 }

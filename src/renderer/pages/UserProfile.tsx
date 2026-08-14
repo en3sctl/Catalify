@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Check, Heart, ListMusic, Loader2, Music2, Play, Shuffle, UserPlus } from 'lucide-react'
 import { FollowListModal } from '../components/FollowListModal'
 import {
@@ -21,6 +21,72 @@ import { Avatar } from '../components/UserRow'
 import { createLibraryPlaylist, getArtistsTopSongs, getCatalogSongsByIds, playSongs } from '../utils/musickit-api'
 import { artworkUrl, clsx, timeAgo } from '../utils/format'
 import { toast } from '../store/toast'
+import { badgeById } from '../utils/badges'
+import { BadgeMedal } from '../components/BadgeMedal'
+import { useT } from '../i18n'
+
+/**
+ * Medal wall for the header card's right column — fills the empty space
+ * next to the identity block, packed from the top-left. Each medal flips
+ * on click to reveal how it's earned. Shows up to 6; overflow collapses
+ * into a "+N" button that opens a scrollable all-badges popup. Ids resolve
+ * against the local BADGE_DEFS; unknown ids (newer versions) are skipped.
+ */
+const BADGE_WALL_MAX = 6
+
+function ProfileBadges({ ids }: { ids?: string[] }) {
+  const t = useT()
+  const [showAll, setShowAll] = useState(false)
+  const defs = (ids ?? []).map(badgeById).filter((b): b is NonNullable<typeof b> => !!b)
+  if (defs.length === 0) return null
+  const overflow = defs.length - BADGE_WALL_MAX
+  return (
+    <div className="flex flex-col gap-3 content-start self-start flex-shrink-0 w-full sm:w-[240px]">
+      <div className="grid grid-cols-3 gap-x-2.5 gap-y-3 justify-items-start">
+        {defs.slice(0, BADGE_WALL_MAX).map((b) => (
+          <BadgeMedal key={b.id} def={b} size={66} />
+        ))}
+      </div>
+      {overflow > 0 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="self-start px-3 py-1.5 rounded-full bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.07] text-[11.5px] font-semibold text-cream/80 hover:text-cream transition"
+        >
+          +{overflow} {t('badgesMore')}
+        </button>
+      )}
+      <AnimatePresence>
+        {showAll && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/55"
+              onClick={() => setShowAll(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+              className="relative glass rounded-3xl p-6 shadow-deep w-[min(92vw,460px)]"
+            >
+              <div className="text-[12px] uppercase tracking-[0.2em] text-cream/60 font-semibold mb-5">
+                {t('badges')}
+              </div>
+              <div className="grid grid-cols-4 gap-x-3 gap-y-4 max-h-[60vh] overflow-y-auto justify-items-center pr-1">
+                {defs.map((b) => (
+                  <BadgeMedal key={b.id} def={b} size={76} />
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
 
 /**
  * One batched catalog lookup: each shared playlist's first streamable
@@ -106,61 +172,84 @@ export function UserProfile() {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Header */}
-      <section className="flex flex-col md:flex-row md:items-end gap-6">
-        <Avatar name={user.displayName || user.handle} src={user.avatarUrl} size={140} />
-        <div className="flex-1 min-w-0">
-          <div className="text-[12px] uppercase tracking-[0.25em] text-cream/55">Profile</div>
-          <h1 className="mt-1 text-4xl md:text-6xl font-display font-bold tracking-[-0.025em] leading-[1] truncate">
-            {user.displayName}
-          </h1>
-          <div className="mt-1.5 text-[15px] text-cream/55">@{user.handle}</div>
-          {user.bio && <p className="mt-2 text-[13.5px] text-obsidian-300 max-w-lg">{user.bio}</p>}
-          <div className="mt-3 flex items-center gap-5 text-[13px] text-obsidian-300">
-            {(() => {
-              const canView = !user.hideLists || user.isMe
-              const Count = ({ n, label, which }: { n: number; label: string; which: 'followers' | 'following' }) =>
-                canView ? (
-                  <button onClick={() => setModalWhich(which)} className="hover:text-cream transition">
-                    <b className="text-cream">{n}</b> {label}
-                  </button>
-                ) : (
-                  <span><b className="text-cream">{n}</b> {label}</span>
-                )
-              return (
-                <>
-                  <Count n={user.followers ?? 0} label="followers" which="followers" />
-                  <Count n={user.following ?? 0} label="following" which="following" />
-                </>
-              )
-            })()}
+      {/* Header — one tidy glass card: avatar + identity on the left,
+          follow action pinned right, counts as pill chips underneath. */}
+      <section className="liquid-glass rounded-[28px] p-6 md:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+          <div className="flex-shrink-0">
+            <Avatar name={user.displayName || user.handle} src={user.avatarUrl} size={120} />
           </div>
-          {!user.isMe && (
-            <button
-              onClick={toggle}
-              disabled={busy}
-              className={clsx(
-                'mt-4 flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold transition disabled:opacity-60',
-                following
-                  ? 'bg-white/[0.06] text-cream hover:bg-white/[0.1]'
-                  : 'accent-bg text-obsidian-950 hover:brightness-110 shadow-glow',
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.25em] text-cream/50 font-semibold">
+              Profile
+            </div>
+            <h1 className="mt-1 text-3xl md:text-5xl font-display font-bold tracking-[-0.025em] leading-[1.05] truncate">
+              {user.displayName}
+            </h1>
+            <div className="mt-1.5 flex items-center gap-2 text-[14px] text-cream/55 min-w-0">
+              <span className="truncate">@{user.handle}</span>
+            </div>
+            {user.bio && (
+              <p className="mt-2 text-[13px] text-obsidian-300 max-w-lg line-clamp-2">{user.bio}</p>
+            )}
+            <div className="mt-3.5 flex items-center gap-2 text-[12.5px]">
+              {(() => {
+                const canView = !user.hideLists || user.isMe
+                const Count = ({ n, label, which }: { n: number; label: string; which: 'followers' | 'following' }) => {
+                  const inner = (
+                    <>
+                      <b className="text-cream">{n}</b>
+                      <span className="text-cream/60">{label}</span>
+                    </>
+                  )
+                  const chip =
+                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/[0.06]'
+                  return canView ? (
+                    <button
+                      onClick={() => setModalWhich(which)}
+                      className={clsx(chip, 'hover:bg-white/[0.09] transition')}
+                    >
+                      {inner}
+                    </button>
+                  ) : (
+                    <span className={chip}>{inner}</span>
+                  )
+                }
+                return (
+                  <>
+                    <Count n={user.followers ?? 0} label="followers" which="followers" />
+                    <Count n={user.following ?? 0} label="following" which="following" />
+                  </>
+                )
+              })()}
+              {!user.isMe && (
+                <button
+                  onClick={toggle}
+                  disabled={busy}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[12.5px] font-semibold transition disabled:opacity-60',
+                    following
+                      ? 'bg-white/[0.06] text-cream hover:bg-white/[0.1] border border-white/[0.08]'
+                      : 'accent-bg text-obsidian-950 hover:brightness-110 shadow-glow',
+                  )}
+                >
+                  {following ? <><Check size={14} /> Following</> : <><UserPlus size={14} /> Follow</>}
+                </button>
               )}
-            >
-              {following ? <><Check size={15} /> Following</> : <><UserPlus size={15} /> Follow</>}
-            </button>
-          )}
-
+            </div>
+          </div>
+          <ProfileBadges ids={user.badges} />
         </div>
-      </section>
 
-      {/* Now playing / last played — its own section so it popping in
-          after the async fetch doesn't resize the header (avatar+name
-          used to jump down when this loaded inside the flex column). */}
-      {presence && presence.title && (
-        <section className="max-w-md">
-          <NowPlayingBanner presence={presence} user={user} />
-        </section>
-      )}
+        {/* Now playing / last played lives inside the header card so the
+            page reads as one block instead of loose floating pieces. Its
+            async pop-in only grows the card, never reflows the identity row. */}
+        {presence && presence.title && (
+          <div className="mt-5 max-w-md">
+            <NowPlayingBanner presence={presence} user={user} />
+          </div>
+        )}
+      </section>
 
       {/* Favorites showcase */}
       {(user.favoriteArtist || user.favoriteSong) && (

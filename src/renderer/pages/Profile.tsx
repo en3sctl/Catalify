@@ -9,6 +9,9 @@ import {
   Pencil,
   Check,
   X,
+  Award,
+  Eye,
+  EyeOff,
   Settings as SettingsIcon,
 } from 'lucide-react'
 import { usePlayer } from '../store/player'
@@ -21,8 +24,14 @@ import {
 import { Artwork } from '../components/Artwork'
 import { MediaCard } from '../components/MediaCard'
 import { SocialProfileCard } from '../components/SocialProfileCard'
+import { AvatarCropModal } from '../components/AvatarCropModal'
 import { artworkUrl, clsx } from '../utils/format'
-import { resizeImageToDataUrl } from '../utils/image'
+import { shrinkDataUrl } from '../utils/image'
+import { useSocial } from '../store/social'
+import { getPlayLog } from '../utils/taste'
+import { BADGE_DEFS, computeEarnedBadges } from '../utils/badges'
+import { BadgeMedal } from '../components/BadgeMedal'
+import { useT } from '../i18n'
 import { Link } from 'react-router-dom'
 
 /**
@@ -55,6 +64,7 @@ export function Profile() {
   const [rotation, setRotation] = useState<any[]>([])
   const [followingArtists, setFollowingArtists] = useState<any[]>([])
   const [playlists, setPlaylists] = useState<any[]>([])
+  const [cropFile, setCropFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -108,16 +118,27 @@ export function Profile() {
   }, [followedArtistIds.join(',')])
 
   const onPickAvatar = () => fileRef.current?.click()
-  const onAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = '' // allow re-picking the same file
-    if (!file) return
+    if (file) setCropFile(file) // opens the crop modal; applyAvatar finishes the job
+  }
+
+  const applyAvatar = async (dataUrl: string) => {
+    setCropFile(null)
+    setAvatar(dataUrl)
+    await window.bombo.store.set('profileAvatar', dataUrl)
+    // Push to the social backend immediately — syncAvatar() otherwise only
+    // runs at boot, so friends wouldn't see the new picture until the next
+    // app restart.
     try {
-      const dataUrl = await resizeImageToDataUrl(file, 320)
-      setAvatar(dataUrl)
-      window.bombo.store.set('profileAvatar', dataUrl)
+      if (useSocial.getState().user) {
+        const small = await shrinkDataUrl(dataUrl, 96)
+        await useSocial.getState().update({ avatarUrl: small })
+        await window.bombo.store.set('socialAvatarSource', dataUrl)
+      }
     } catch (err) {
-      console.warn('avatar resize failed', err)
+      console.warn('[profile] avatar sync failed', err)
     }
   }
 
@@ -126,6 +147,13 @@ export function Profile() {
     setName(next)
     window.bombo.store.set('profileName', next)
     setEditingName(false)
+    // Mirror to the social backend so friends see the rename — this page
+    // used to write electron-store only, so the server kept the old name.
+    if (next && useSocial.getState().user) {
+      useSocial.getState().update({ displayName: next }).catch((err) =>
+        console.warn('[profile] name sync failed', err),
+      )
+    }
   }
 
   const cancelName = () => {
@@ -193,6 +221,13 @@ export function Profile() {
             onChange={onAvatarChange}
             className="hidden"
           />
+          {cropFile && (
+            <AvatarCropModal
+              file={cropFile}
+              onCancel={() => setCropFile(null)}
+              onSave={applyAvatar}
+            />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[12px] uppercase tracking-[0.25em] text-cream/55">
@@ -251,6 +286,9 @@ export function Profile() {
         <Stat icon={<Users size={16} />} label="Artists" value={followedArtistIds.length} />
         <Stat icon={<ListMusic size={16} />} label="Playlists" value={playlists.length} to="/library" />
       </section>
+
+      {/* Listening badges — earned locally, displayed set syncs to friends */}
+      <BadgesSection />
 
       {/* Çatalify social account — claim a handle / edit profile */}
       <SocialProfileCard defaultName={name} />
@@ -358,6 +396,102 @@ export function Profile() {
         </section>
       )}
     </div>
+  )
+}
+
+/**
+ * Listening badges. Earned set comes from the local playLog; each earned
+ * badge can be shown/hidden with a click (hidden ids persist under
+ * `badgesHidden`). The visible set syncs to the social backend so friends
+ * see it on the profile header. Locked badges render dimmed with their
+ * unlock condition — a little carrot to keep listening.
+ */
+function BadgesSection() {
+  const t = useT()
+  const socialUser = useSocial((s) => s.user)
+  const [earned, setEarned] = useState<string[]>([])
+  const [hidden, setHidden] = useState<Record<string, boolean>>({})
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    Promise.all([
+      getPlayLog(),
+      window.bombo.store.get<string[]>('badgesHidden'),
+    ]).then(([log, hid]) => {
+      setEarned(computeEarnedBadges(log))
+      if (Array.isArray(hid)) setHidden(Object.fromEntries(hid.map((i) => [i, true])))
+      setLoaded(true)
+    })
+  }, [])
+
+  const shown = earned.filter((id) => !hidden[id])
+
+  // Mirror the visible set to the server whenever it drifts from what the
+  // backend has. update() refreshes the stored user, which re-runs this
+  // effect once with equal values and settles.
+  useEffect(() => {
+    if (!loaded || !socialUser) return
+    const server = JSON.stringify(socialUser.badges ?? [])
+    if (server !== JSON.stringify(shown)) {
+      useSocial.getState().update({ badges: shown }).catch(() => {})
+    }
+  }, [loaded, shown.join(','), socialUser?.id])
+
+  const toggle = (id: string) => {
+    setHidden((h) => {
+      const next = { ...h, [id]: !h[id] }
+      window.bombo.store.set(
+        'badgesHidden',
+        Object.keys(next).filter((k) => next[k]),
+      )
+      return next
+    })
+  }
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-1">
+        <Award size={18} className="accent-text" />
+        <h2 className="font-display text-[22px] font-bold tracking-tight leading-none">
+          {t('badges')}
+        </h2>
+      </div>
+      <p className="text-[12px] text-cream/50 mb-5">{t('badgesHint')}</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-5">
+        {BADGE_DEFS.map((b) => {
+          const isEarned = earned.includes(b.id)
+          const isHidden = !!hidden[b.id]
+          return (
+            <BadgeMedal
+              key={b.id}
+              def={b}
+              size={78}
+              locked={!isEarned}
+              dimmed={isEarned && isHidden}
+              corner={
+                isEarned ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggle(b.id)
+                    }}
+                    title={isHidden ? t('badgeShow') : t('badgeHide')}
+                    className={clsx(
+                      'w-6 h-6 rounded-full flex items-center justify-center border transition',
+                      isHidden
+                        ? 'bg-obsidian-950/80 border-white/[0.1] text-cream/50 hover:text-cream'
+                        : 'accent-bg border-transparent text-obsidian-950',
+                    )}
+                  >
+                    {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
+                  </button>
+                ) : undefined
+              }
+            />
+          )
+        })}
+      </div>
+    </section>
   )
 }
 

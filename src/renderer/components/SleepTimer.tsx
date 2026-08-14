@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Moon } from 'lucide-react'
 import { usePlayer } from '../store/player'
+import { useT } from '../i18n'
 
 export function SleepTimer() {
   const sleepAt = usePlayer((s) => s.sleepTimerMs)
   const setSleepTimer = usePlayer((s) => s.setSleepTimer)
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [remaining, setRemaining] = useState('')
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
 
   useEffect(() => {
     if (!sleepAt) { setRemaining(''); return }
@@ -22,12 +27,18 @@ export function SleepTimer() {
     return () => clearInterval(id)
   }, [sleepAt])
 
+  const toggle = () => {
+    if (!open && btnRef.current) setAnchor(btnRef.current.getBoundingClientRect())
+    setOpen((v) => !v)
+  }
+
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={toggle}
         className={`relative p-2 rounded-lg hover:bg-white/[0.06] transition ${sleepAt ? 'accent-text' : 'text-obsidian-300'}`}
-        title="Sleep timer"
+        title={t('sleepTimer')}
       >
         <Moon size={16} />
         {remaining && (
@@ -36,34 +47,46 @@ export function SleepTimer() {
           </span>
         )}
       </button>
-      {open && (
-        <div
-          className="absolute bottom-full right-0 mb-2 glass rounded-xl p-2 min-w-[180px] shadow-deep z-50"
-          onMouseLeave={() => setOpen(false)}
-        >
-          <div className="px-3 py-1.5 text-[11px] uppercase tracking-widest text-obsidian-300">Stop playback in</div>
-          {[5, 10, 15, 30, 45, 60, 90].map((m) => (
-            <button
-              key={m}
-              onClick={() => { setSleepTimer(m); setOpen(false) }}
-              className="w-full text-left px-3 py-1.5 rounded text-[13px] hover:bg-white/[0.05]"
-            >
-              {m} minutes
-            </button>
-          ))}
-          {sleepAt && (
-            <>
-              <div className="border-t border-white/[0.06] my-1"></div>
+      {/* Portaled to <body>: inside the blurred NowPlayingBar the glass
+          backdrop-filter can't sample anything (ancestor backdrop root),
+          which made the menu look transparent/buggy. As a top-level
+          sibling it samples the real backdrop — same as the QueueDrawer. */}
+      {open && anchor &&
+        createPortal(
+          <div
+            className="fixed glass rounded-xl p-2 w-[200px] shadow-deep z-50"
+            style={{
+              // Explicit width + left (not right/shrink-wrap): a fixed
+              // element with only `right` set stretched across the window.
+              left: Math.max(8, anchor.right - 200),
+              bottom: window.innerHeight - anchor.top + 8,
+            }}
+            onMouseLeave={() => setOpen(false)}
+          >
+            <div className="px-3 py-1.5 text-[11px] uppercase tracking-widest text-obsidian-300">{t('stopPlaybackIn')}</div>
+            {[5, 10, 15, 30, 45, 60, 90].map((m) => (
               <button
-                onClick={() => { setSleepTimer(null); setOpen(false) }}
-                className="w-full text-left px-3 py-1.5 rounded text-[13px] text-red-300 hover:bg-white/[0.05]"
+                key={m}
+                onClick={() => { setSleepTimer(m); setOpen(false) }}
+                className="w-full text-left px-3 py-1.5 rounded text-[13px] hover:bg-white/[0.05]"
               >
-                Cancel timer
+                {t('minutesShort').replace('{n}', String(m))}
               </button>
-            </>
-          )}
-        </div>
-      )}
+            ))}
+            {sleepAt && (
+              <>
+                <div className="border-t border-white/[0.06] my-1"></div>
+                <button
+                  onClick={() => { setSleepTimer(null); setOpen(false) }}
+                  className="w-full text-left px-3 py-1.5 rounded text-[13px] text-red-300 hover:bg-white/[0.05]"
+                >
+                  {t('cancelTimer')}
+                </button>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

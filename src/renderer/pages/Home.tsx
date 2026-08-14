@@ -37,6 +37,8 @@ import { usePlayer } from '../store/player'
 import { artworkUrl, clsx } from '../utils/format'
 import { useExplicitFilter } from '../utils/explicit'
 import { TrackRow } from '../components/TrackRow'
+import { heroLines, useT } from '../i18n'
+import { useSettings } from '../store/settings'
 
 interface HomeData {
   recent: any[]
@@ -175,13 +177,14 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
   const rotation = useExplicitFilter<any>(data.rotation)
   const recentlyAdded = useExplicitFilter<any>(data.recentlyAdded)
   const newReleases = useExplicitFilter<any>(data.newReleases)
+  const t = useT()
 
   return (
     <>
       {newReleases.length > 0 && (
         <Rail
-          title="New from artists you follow"
-          subtitle="Fresh releases from your people"
+          title={t('newFromArtists')}
+          subtitle={t('newFromArtistsSub')}
           widthClass="w-48"
         >
           {newReleases.slice(0, 14).map((item) => (
@@ -191,8 +194,8 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       )}
       {recommendations.length > 0 && (
         <Rail
-          title="Made for you"
-          subtitle="Apple Music picks based on what you play"
+          title={t('madeForYou')}
+          subtitle={t('madeForYouSub')}
           widthClass="w-48"
         >
           {flattenRecommendations(recommendations)
@@ -210,8 +213,8 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       {chartSongs.length > 0 && (
         <section>
           <SectionHeader
-            title="Top 100 right now"
-            subtitle="What's charting on Apple Music today"
+            title={t('top100')}
+            subtitle={t('top100Sub')}
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
             {chartSongs.slice(0, 10).map((s, i) => (
@@ -229,7 +232,7 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       )}
 
       {chartAlbums.length > 0 && (
-        <Rail title="Trending albums" subtitle="Most-played in your storefront" widthClass="w-48">
+        <Rail title={t('trendingAlbums')} subtitle={t('trendingAlbumsSub')} widthClass="w-48">
           {chartAlbums.slice(0, 14).map((item) => (
             <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
@@ -239,8 +242,8 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       {librarySongs.length > 0 && (
         <section>
           <SectionHeader
-            title="From your library"
-            subtitle="Songs you've saved in Apple Music"
+            title={t('fromYourLibrary')}
+            subtitle={t('fromYourLibrarySub')}
             action={
               <Link to="/library" className="text-[12px] text-obsidian-300 hover:text-cream">
                 See all →
@@ -268,7 +271,7 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       )}
 
       {recent.length > 0 && (
-        <Rail title="Recently played" subtitle="Jump right back in" widthClass="w-48">
+        <Rail title={t('recentlyPlayed')} subtitle={t('recentlyPlayedSub')} widthClass="w-48">
           {recent.slice(0, 12).map((item) => (
             <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
@@ -276,7 +279,7 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       )}
 
       {chartPlaylists.length > 0 && (
-        <Rail title="Editor's picks" subtitle="Featured playlists right now" widthClass="w-48">
+        <Rail title={t('editorsPicks')} subtitle={t('editorsPicksSub')} widthClass="w-48">
           {chartPlaylists.slice(0, 14).map((item) => (
             <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
@@ -285,8 +288,8 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
 
       {playlists.length > 0 && (
         <Rail
-          title="Your playlists"
-          subtitle="From your Apple Music library"
+          title={t('yourPlaylists')}
+          subtitle={t('yourPlaylistsSub')}
           widthClass="w-48"
           action={
             <Link to="/library" className="text-[12px] text-obsidian-300 hover:text-cream">
@@ -301,7 +304,7 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       )}
 
       {rotation.length > 0 && (
-        <Rail title="On repeat" subtitle="Your heavy rotation" widthClass="w-48">
+        <Rail title={t('onRepeat')} subtitle={t('onRepeatSub')} widthClass="w-48">
           {rotation.slice(0, 12).map((item) => (
             <MediaCard key={item.id + (item.type ?? '')} item={item} onPlay={() => playItem(item)} />
           ))}
@@ -309,7 +312,7 @@ function HomeBody({ data, loading }: { data: HomeData; loading: boolean }) {
       )}
 
       {recentlyAdded.length > 0 && (
-        <Rail title="Recently added" subtitle="Fresh in your library" widthClass="w-48">
+        <Rail title={t('recentlyAdded')} subtitle={t('recentlyAddedSub')} widthClass="w-48">
           {recentlyAdded.slice(0, 12).map((item) => (
             <MediaCard key={item.id} item={item} onPlay={() => playItem(item)} />
           ))}
@@ -475,14 +478,30 @@ function Hero({
 }) {
   const nowPlaying = usePlayer((s) => s.nowPlaying)
   const isPlaying = usePlayer((s) => s.isPlaying)
+  const t = useT()
+  const lang = useSettings((s) => s.lang)
 
   const greeting = useMemo(() => {
     const h = new Date().getHours()
-    if (h < 5) return 'Late night'
-    if (h < 12) return 'Good morning'
-    if (h < 18) return 'Good afternoon'
-    return 'Good evening'
+    if (h < 5) return t('greetingLateNight')
+    if (h < 12) return t('greetingMorning')
+    if (h < 18) return t('greetingAfternoon')
+    return t('greetingEvening')
+  }, [t])
+
+  // Rotating headline: random pick from the state's pool, re-rolled when
+  // the player state / language changes and every few minutes on a timer —
+  // so the hero doesn't greet you with the same sentence forever.
+  const heroState = nowPlaying ? 'playing' : featured ? 'resume' : 'fresh'
+  const [lineNonce, setLineNonce] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setLineNonce((n) => n + 1), 4 * 60 * 1000)
+    return () => window.clearInterval(id)
   }, [])
+  const headline = useMemo(() => {
+    const pool = heroLines[lang][heroState as 'playing' | 'resume' | 'fresh']
+    return pool[Math.floor(Math.random() * pool.length)]
+  }, [heroState, lang, lineNonce])
 
   // Prefer "now playing" as the hero context, fall back to last played.
   const heroItem = nowPlaying ?? (featured
@@ -531,7 +550,7 @@ function Hero({
             <span>{greeting}</span>
           </div>
           <h1 className="mt-3 font-display text-[44px] md:text-[58px] font-bold leading-[0.95] tracking-[-0.035em]">
-            {nowPlaying ? 'Keep the flow going.' : heroItem ? 'Pick up where\nyou left off.' : 'What will you\nplay today?'}
+            {headline}
           </h1>
 
           {heroItem && (

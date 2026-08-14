@@ -9,9 +9,46 @@
   --accent: 255 170 95;
   --accent-soft: 240 150 80;
 
+  /* Theme palette — every Tailwind color (obsidian scale, cream, and even
+   * `white`/`black`) resolves through these triplets, so the light theme
+   * is a pure variable swap: `bg-white/[0.06]` hover washes become 6% ink
+   * on paper instead of 6% white on dark. */
+  --white: 255 255 255;
+  --black: 0 0 0;
+  --ob-950: 10 8 18;
+  --ob-900: 17 13 26;
+  --ob-800: 25 19 34;
+  --ob-700: 34 26 45;
+  --ob-600: 45 36 57;
+  --ob-500: 58 47 72;
+  --ob-400: 155 148 163;
+  --ob-300: 186 179 189;
+  --ob-200: 197 191 201;
+  --ob-100: 236 230 220;
+  --cream: 236 230 220;
+
   --titlebar-h: 36px;
   --sidebar-w: 236px;
   --nowplaying-h: 96px;
+}
+
+/* Light theme — inverted palette. `white` becomes ink, `black` becomes
+ * paper, the obsidian scale flips top-to-bottom. Accent is pinned darker
+ * from useArtColors so accent text stays readable on light surfaces. */
+[data-theme='light'] {
+  --white: 28 22 36;
+  --black: 255 255 255;
+  --ob-950: 246 242 235;
+  --ob-900: 240 235 226;
+  --ob-800: 232 226 214;
+  --ob-700: 219 211 198;
+  --ob-600: 200 191 178;
+  --ob-500: 172 162 150;
+  --ob-400: 110 103 118;
+  --ob-300: 88 82 99;
+  --ob-200: 72 66 82;
+  --ob-100: 35 29 43;
+  --cream: 35 29 43;
 }
 
 html, body, #root {
@@ -176,6 +213,76 @@ html, body, #root {
   position: absolute;
 }
 
+/* ── Light theme surface overrides ─────────────────────────────────
+   The glass tiers were tuned for dark; on paper they need lighter fills,
+   ink borders, and no plus-lighter specular (it washes light surfaces
+   out to pure white). */
+[data-theme='light'] .glass,
+[data-theme='light'] .liquid-glass,
+[data-theme='light'] .lofi-card {
+  background: rgba(255, 252, 246, 0.55);
+  border-color: rgba(40, 30, 50, 0.10);
+  box-shadow:
+    0 10px 40px -16px rgba(80, 60, 40, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+[data-theme='light'] .liquid-glass-strong {
+  background: rgba(255, 252, 246, 0.7);
+  border-color: rgba(40, 30, 50, 0.12);
+  box-shadow:
+    0 20px 60px -20px rgba(80, 60, 40, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+[data-theme='light'] .liquid-glass-subtle {
+  background: rgba(255, 252, 246, 0.4);
+  border-color: rgba(40, 30, 50, 0.07);
+}
+[data-theme='light'] .glass::before,
+[data-theme='light'] .liquid-glass::before,
+[data-theme='light'] .liquid-glass-strong::before {
+  display: none;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: rgba(40, 30, 50, 0.14);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(40, 30, 50, 0.24);
+  background-clip: padding-box;
+}
+[data-theme='light'] .row-hover:hover {
+  background: linear-gradient(90deg, rgba(40, 30, 50, 0.05), rgba(40, 30, 50, 0));
+}
+[data-theme='light'] :focus-visible {
+  outline-color: rgba(40, 30, 50, 0.3);
+}
+
+/* ── Badge medal 3D flip ───────────────────────────────────────
+   .flip-wrap gives perspective; .flip-inner rotates; the two faces hide
+   their reverse side. Used by components/BadgeMedal.tsx. */
+.flip-wrap {
+  perspective: 640px;
+}
+.flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.34, 1.3, 0.4, 1);
+}
+.flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+.flip-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-back {
+  transform: rotateY(180deg);
+}
+
 /* Track row hover highlight */
 .row-hover { transition: background-color 180ms ease, color 180ms ease; }
 .row-hover:hover {
@@ -194,7 +301,8 @@ body {
   font-family: 'Geist', system-ui, sans-serif;
   font-feature-settings: 'ss01', 'ss02', 'cv11';
   letter-spacing: -0.005em;
-  color: #ece6dc;
+  color: rgb(var(--cream));
+  background: rgb(var(--ob-950));
 }
 .font-display {
   font-family: 'Bricolage Grotesque', 'Geist', system-ui, sans-serif;

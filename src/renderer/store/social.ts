@@ -71,6 +71,7 @@ interface SocialState {
     hideLists?: boolean
     favoriteArtist?: FavoriteItem | null
     favoriteSong?: FavoriteItem | null
+    badges?: string[]
   }) => Promise<void>
   setShareActivity: (v: boolean) => void
   signOut: () => Promise<void>

@@ -8,20 +8,22 @@ import { FriendPresence, getFollowingPresence } from '../utils/social-api'
 import { Avatar } from './UserRow'
 import { NotificationBell } from './NotificationBell'
 import { timeAgo } from '../utils/format'
+import { TKey, useT } from '../i18n'
 
-const items = [
-  { to: '/', label: 'Home', icon: Home },
-  { to: '/search', label: 'Search', icon: Search },
-  { to: '/library', label: 'Library', icon: Library },
-  { to: '/radio', label: 'Radio', icon: Radio },
-  { to: '/liked', label: 'Liked', icon: Heart },
-  { to: '/friends', label: 'Friends', icon: Users },
-  { to: '/stats', label: 'Stats', icon: BarChart3 },
+const items: { to: string; labelKey: TKey; icon: typeof Home }[] = [
+  { to: '/', labelKey: 'navHome', icon: Home },
+  { to: '/search', labelKey: 'navSearch', icon: Search },
+  { to: '/library', labelKey: 'navLibrary', icon: Library },
+  { to: '/radio', labelKey: 'navRadio', icon: Radio },
+  { to: '/liked', labelKey: 'navLiked', icon: Heart },
+  { to: '/friends', labelKey: 'navFriends', icon: Users },
+  { to: '/stats', labelKey: 'navStats', icon: BarChart3 },
 ]
 
 export function Sidebar() {
   const isAuthorized = usePlayer((s) => s.isAuthorized)
   const isReady = usePlayer((s) => s.isReady)
+  const t = useT()
 
   return (
     <aside
@@ -38,7 +40,7 @@ export function Sidebar() {
       }}
     >
       <nav className="flex flex-col gap-1 mt-2">
-        {items.map(({ to, label, icon: Icon }) => (
+        {items.map(({ to, labelKey, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -54,7 +56,7 @@ export function Sidebar() {
             {({ isActive }) => (
               <>
                 <Icon size={17} className={isActive ? 'accent-text' : ''} />
-                {label}
+                {t(labelKey)}
                 {isActive && <span className="ml-auto w-1 h-4 rounded-full accent-bg"></span>}
               </>
             )}
@@ -67,7 +69,10 @@ export function Sidebar() {
       <div className="mt-auto">
         <AuthButton ready={isReady} authorized={isAuthorized} />
         {isAuthorized && (
-          <div className="flex items-center gap-1">
+          // mt-3 lives on the row (not inside ProfileChip) so the bell and
+          // the chip share the same vertical centre — the bell used to sit
+          // a notch higher because only the chip carried the top margin.
+          <div className="mt-3 flex items-center gap-1">
             <div className="flex-1 min-w-0">
               <ProfileChip />
             </div>
@@ -89,6 +94,7 @@ function FriendsActivity() {
   const user = useSocial((s) => s.user)
   const navigate = useNavigate()
   const [presence, setPresence] = useState<FriendPresence[]>([])
+  const t = useT()
 
   useEffect(() => {
     if (!user) {
@@ -115,7 +121,7 @@ function FriendsActivity() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto mt-5 -mx-1 px-1">
       <div className="px-2 mb-2 text-[10px] uppercase tracking-[0.16em] text-cream/40 font-semibold">
-        Friends listening
+        {t('friendsListening')}
       </div>
       <div className="flex flex-col gap-0.5">
         {presence.map((p) => {
@@ -149,7 +155,7 @@ function FriendsActivity() {
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="truncate text-[11px] font-semibold text-cream">{p.displayName}</span>
                 <span className={`text-[9.5px] flex-shrink-0 ${live ? 'accent-text' : 'text-cream/40'}`}>
-                  · {live ? 'now' : timeAgo(p.updatedAt)}
+                  · {live ? t('now') : timeAgo(p.updatedAt)}
                 </span>
               </div>
               <div className="truncate text-[11px] text-cream/70 leading-tight">{p.title}</div>
@@ -172,6 +178,7 @@ function FriendsActivity() {
 function ProfileChip() {
   const [name, setName] = useState('')
   const [avatar, setAvatar] = useState<string | null>(null)
+  const t = useT()
   useEffect(() => {
     let cancelled = false
     const tick = () => {
@@ -194,7 +201,7 @@ function ProfileChip() {
   return (
     <Link
       to="/profile"
-      className="mt-3 group flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-white/[0.04] transition"
+      className="group flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-white/[0.04] transition"
       title="Open profile"
     >
       <div className="w-8 h-8 rounded-full overflow-hidden bg-white/[0.06] border border-white/[0.08] flex-shrink-0">
@@ -208,9 +215,9 @@ function ProfileChip() {
       </div>
       <div className="flex-1 min-w-0">
         <div className="truncate text-[12.5px] font-semibold text-cream">
-          {name || 'Set up profile'}
+          {name || t('setUpProfile')}
         </div>
-        <div className="truncate text-[10.5px] text-cream/45">View profile</div>
+        <div className="truncate text-[10.5px] text-cream/45">{t('viewProfile')}</div>
       </div>
       <ChevronRight size={14} className="text-cream/40 group-hover:text-cream/80 flex-shrink-0 transition" />
     </Link>
@@ -218,11 +225,12 @@ function ProfileChip() {
 }
 
 function AuthButton({ ready, authorized }: { ready: boolean; authorized: boolean }) {
+  const t = useT()
   if (!ready) {
     return (
       <button disabled className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-obsidian-400">
         <span className="w-3 h-3 rounded-full border-2 border-obsidian-400 border-t-transparent animate-spin"></span>
-        Connecting…
+        {t('connecting')}
       </button>
     )
   }
@@ -236,7 +244,7 @@ function AuthButton({ ready, authorized }: { ready: boolean; authorized: boolean
       className="group relative w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md text-[13px] font-semibold text-obsidian-950 bg-cream hover:bg-white transition overflow-hidden"
     >
       <AppleGlyph />
-      <span>Sign in with Apple Music</span>
+      <span>{t('signInApple')}</span>
       <span
         aria-hidden
         className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out"

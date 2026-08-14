@@ -3,6 +3,7 @@ import { usePlayer } from '../store/player'
 import { fetchLyrics, LyricLine, LyricsResult } from '../utils/lyrics'
 import { useSmoothProgress } from '../hooks/useSmoothProgress'
 import { clsx } from '../utils/format'
+import { useT } from '../i18n'
 
 /**
  * Time-synced lyrics view with a karaoke-style per-word read head. Drops
@@ -18,6 +19,7 @@ export function LyricsPanel({ compact = false }: { compact?: boolean }) {
   const isPlaying = usePlayer((s) => s.isPlaying)
   const seek = usePlayer((s) => s.seek)
   const smoothProgressMs = useSmoothProgress(progressMs, isPlaying)
+  const t = useT()
 
   const [result, setResult] = useState<LyricsResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -83,7 +85,7 @@ export function LyricsPanel({ compact = false }: { compact?: boolean }) {
   if (!np) {
     return (
       <div className="h-full flex items-center justify-center text-obsidian-400 italic">
-        Play something to see lyrics.
+        {t('playSomethingLyrics')}
       </div>
     )
   }
@@ -101,20 +103,20 @@ export function LyricsPanel({ compact = false }: { compact?: boolean }) {
           'linear-gradient(transparent 0, black 32px, black calc(100% - 32px), transparent 100%)',
       }}
     >
-      {loading && <div className="text-center text-obsidian-400 italic">Loading lyrics…</div>}
+      {loading && <div className="text-center text-obsidian-400 italic">{t('loadingLyrics')}</div>}
       {!loading && !lines && (
         <div className="text-center text-obsidian-400 italic max-w-md mx-auto">
-          No lyrics found on lrclib or Apple Music for this track.
+          {t('noLyricsFound')}
         </div>
       )}
       {lines && lines.length === 0 && (
-        <div className="text-center text-obsidian-400 italic">No lyrics found.</div>
+        <div className="text-center text-obsidian-400 italic">{t('noLyrics')}</div>
       )}
       {lines && lines.length > 0 && (
         <div className={clsx('mx-auto space-y-4', compact ? 'max-w-md' : 'max-w-2xl')}>
           {!isSynced && (
             <div className="text-center text-obsidian-500 text-[10px] uppercase tracking-widest mb-6">
-              Unsynced lyrics
+              {t('unsyncedLyrics')}
             </div>
           )}
           {lines.map((line, i) => {
@@ -184,7 +186,8 @@ const WordToken = ({
   return (
     <span
       style={{
-        color: `rgba(255, 255, 255, ${opacity.toFixed(3)})`,
+        // --white flips to ink in the light theme, keeping karaoke fill readable.
+        color: `rgb(var(--white) / ${opacity.toFixed(3)})`,
         transition: 'color 120ms linear',
       }}
     >
@@ -266,9 +269,9 @@ const LyricsLine = ({
   }
 
   const stateColor =
-    state === 'past' ? 'rgba(255,255,255,0.32)'
-    : state === 'flat' ? 'rgba(255,255,255,0.82)'
-    : 'rgba(255,255,255,0.58)'
+    state === 'past' ? 'rgb(var(--white) / 0.32)'
+    : state === 'flat' ? 'rgb(var(--white) / 0.82)'
+    : 'rgb(var(--white) / 0.58)'
 
   const stateOpacity = state === 'past' ? 0.55 : state === 'future' ? 0.85 : 1
   const stateScale = state === 'past' ? 0.96 : state === 'future' ? 0.97 : 1

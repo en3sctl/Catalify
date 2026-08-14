@@ -5,6 +5,7 @@ import { GripVertical, ListMusic, Pin, X } from 'lucide-react'
 import { getCatalogSongsByIds, getMusicKit } from '../utils/musickit-api'
 import { artworkUrl } from '../utils/format'
 import { usePlayer, QueueItem } from '../store/player'
+import { useT } from '../i18n'
 
 interface QueueItemModel {
   id: string
@@ -30,6 +31,7 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
   const dragSnapshotRef = useRef<QueueItem[] | null>(null)
   const location = useLocation()
   const immersive = location.pathname === '/now-playing'
+  const t = useT()
 
   const allIds = playbackQueue.map((it) => it.id)
   // Every id we've already requested — successful OR not. Without this,
@@ -171,7 +173,7 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
               <div className="flex items-center gap-2">
                 <ListMusic size={16} className="accent-text" />
-                <h3 className="text-sm font-semibold tracking-tight">Sıradakiler</h3>
+                <h3 className="text-sm font-semibold tracking-tight">{t('queueTitle')}</h3>
                 {fullUpcoming.length > 0 && (
                   <span className="text-[11px] text-obsidian-400 ml-1">{fullUpcoming.length}</span>
                 )}
@@ -186,7 +188,7 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
                 <>
                   <div className="px-3 pb-1 pt-1">
                     <div className="text-[10px] uppercase tracking-[0.14em] text-obsidian-400">
-                      Şimdi çalıyor
+                      {t('nowPlayingSection')}
                     </div>
                   </div>
                   <CurrentRow item={currentModel} isNow={currentModel.id === nowPlayingId} />
@@ -194,7 +196,7 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
                     <div className="mx-3 mt-3 mb-1 flex items-center gap-2">
                       <div className="flex-1 h-px bg-white/[0.06]" />
                       <span className="text-[10px] uppercase tracking-[0.14em] text-obsidian-400">
-                        Kuyruk
+                        {t('queueSection')}
                       </span>
                       <div className="flex-1 h-px bg-white/[0.06]" />
                     </div>
@@ -203,7 +205,7 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
               )}
               {!currentModel && upcomingModels.length === 0 && (
                 <div className="text-obsidian-400 text-sm italic px-4 py-8 text-center">
-                  Queue is empty.
+                  {t('queueEmpty')}
                 </div>
               )}
               {upcomingModels.length > 0 && (
@@ -227,7 +229,7 @@ export function QueueDrawer({ open, onClose }: { open: boolean; onClose: () => v
               )}
               {hiddenCount > 0 && (
                 <div className="px-4 py-3 text-[11.5px] text-obsidian-400 text-center">
-                  +{hiddenCount} more in queue
+                  {t('moreInQueue').replace('{n}', String(hiddenCount))}
                 </div>
               )}
             </div>
@@ -274,6 +276,7 @@ function QueueRow({
   onJumpTo: () => void
 }) {
   const controls = useDragControls()
+  const t = useT()
 
   return (
     <Reorder.Item
@@ -289,7 +292,7 @@ function QueueRow({
       <div
         onPointerDown={(e) => controls.start(e)}
         className="cursor-grab active:cursor-grabbing text-obsidian-400 hover:text-white/80 touch-none"
-        title="Drag to reorder"
+        title={t('dragToReorder')}
       >
         <GripVertical size={14} />
       </div>
@@ -303,7 +306,7 @@ function QueueRow({
         {item.priority && (
           <div
             className="absolute -top-1 -right-1 bg-accent-500/95 text-white rounded-full p-[3px] shadow"
-            title="Kuyruğa elle eklendi"
+            title={t('addedManually')}
           >
             <Pin size={9} />
           </div>
@@ -319,7 +322,7 @@ function QueueRow({
           onRemove()
         }}
         className="opacity-0 group-hover:opacity-100 text-obsidian-400 hover:text-red-400 transition p-1"
-        title="Remove"
+        title={t('remove')}
       >
         <X size={14} />
       </button>

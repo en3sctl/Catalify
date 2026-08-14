@@ -8,6 +8,7 @@ import { useUpdateNotifier } from './hooks/useUpdateNotifier'
 import { usePresenceBroadcast } from './hooks/usePresence'
 import { useListenAlong } from './hooks/useListenAlong'
 import { usePlayer } from './store/player'
+import { useSettings } from './store/settings'
 import { useSocial } from './store/social'
 import { useNotifications } from './store/notifications'
 import { TitleBar } from './components/TitleBar'
@@ -43,6 +44,12 @@ import { LayoutGroup } from 'framer-motion'
 export default function App() {
   const location = useLocation()
   const isMiniPlayer = location.hash === '#/mini' || location.pathname === '/mini'
+
+  // Load persisted language/theme before anything renders themed UI —
+  // runs per window (main + mini) since each has its own store instance.
+  useEffect(() => {
+    useSettings.getState().init()
+  }, [])
 
   if (isMiniPlayer) return <MiniPlayerApp />
   return <MainApp />
@@ -97,7 +104,19 @@ function MainApp() {
               bottom: immersive ? 0 : 'var(--nowplaying-h)',
             }}
           >
-            <div className={immersive ? 'h-full' : 'p-8 min-h-full'}>
+            {/* /lyrics needs a definite height (not min-h) so LyricsPanel's
+                own overflow container is the scroller — otherwise `main`
+                scrolls instead and the auto-follow scrollTo hits a div
+                that can't scroll. */}
+            <div
+              className={
+                immersive
+                  ? 'h-full'
+                  : location.pathname === '/lyrics'
+                    ? 'p-8 h-full overflow-hidden'
+                    : 'p-8 min-h-full'
+              }
+            >
               <LoginGate>
                 <Routes>
                   <Route path="/" element={<Home />} />

@@ -8,13 +8,19 @@ import {
   EyeOff,
   ExternalLink,
   Flame,
+  Globe,
   ListMusic,
+  Moon,
+  Palette,
   Sliders,
   Sparkles,
+  Sun,
   Users,
 } from 'lucide-react'
 import { clsx } from '../utils/format'
 import { usePlayer } from '../store/player'
+import { Lang, Theme, useSettings } from '../store/settings'
+import { useT } from '../i18n'
 
 /**
  * Settings page — privacy toggles + sound recommendations.
@@ -75,6 +81,11 @@ export function Settings() {
   const [privacy, setPrivacy] = useState<PrivacyState>(PRIVACY_DEFAULTS)
   const allowExplicit = usePlayer((s) => s.allowExplicit)
   const setAllowExplicit = usePlayer((s) => s.setAllowExplicit)
+  const lang = useSettings((s) => s.lang)
+  const setLang = useSettings((s) => s.setLang)
+  const theme = useSettings((s) => s.theme)
+  const setTheme = useSettings((s) => s.setTheme)
+  const t = useT()
 
   useEffect(() => {
     window.bombo.store.get<PrivacyState>('settings.privacy').then((v) => {
@@ -100,24 +111,63 @@ export function Settings() {
         </Link>
         <div>
           <div className="text-[12px] uppercase tracking-[0.25em] text-cream/55">
-            Settings
+            {t('settingsKicker')}
           </div>
           <h1 className="font-display text-4xl md:text-5xl font-bold tracking-[-0.025em] leading-[1]">
-            Preferences
+            {t('preferences')}
           </h1>
         </div>
       </div>
 
+      {/* Appearance — language + theme. */}
+      <Section
+        icon={<Palette size={16} />}
+        title={t('appearance')}
+        subtitle={t('appearanceSub')}
+      >
+        <ChoiceRow
+          icon={<Globe size={15} />}
+          title={t('language')}
+          description={t('languageDesc')}
+          options={[
+            { value: 'en' as Lang, label: 'English' },
+            { value: 'tr' as Lang, label: 'Türkçe' },
+          ]}
+          value={lang}
+          onChange={setLang}
+        />
+        <ChoiceRow
+          icon={
+            theme === 'light' ? <Sun size={15} /> : theme === 'dark' ? <Moon size={15} /> : <Sparkles size={15} />
+          }
+          title={t('theme')}
+          description={
+            theme === 'adaptive'
+              ? t('themeAdaptiveDesc')
+              : theme === 'dark'
+                ? t('themeDarkDesc')
+                : t('themeLightDesc')
+          }
+          options={[
+            { value: 'adaptive' as Theme, label: t('themeAdaptive') },
+            { value: 'dark' as Theme, label: t('themeDark') },
+            { value: 'light' as Theme, label: t('themeLight') },
+          ]}
+          value={theme}
+          onChange={setTheme}
+        />
+      </Section>
+
       {/* Content — actually wired right now (filters everywhere). */}
       <Section
         icon={<Flame size={16} />}
-        title="Content"
-        subtitle="What can show up across Çatalify."
+        title={t('contentTitle')}
+        subtitle={t('contentSub')}
       >
         <Toggle
           icon={<Flame size={15} />}
-          title="Allow explicit content"
-          description="When off, songs and albums marked “explicit” are hidden from every list — and won't enter the play queue either."
+          title={t('allowExplicit')}
+          description={t('allowExplicitDesc')}
           value={allowExplicit}
           onChange={setAllowExplicit}
         />
@@ -126,34 +176,34 @@ export function Settings() {
       {/* Privacy */}
       <Section
         icon={<Eye size={16} />}
-        title="Privacy"
-        subtitle="Control what other Çatalify users will see when social features ship."
+        title={t('privacyTitle')}
+        subtitle={t('privacySub')}
       >
         <Toggle
           icon={<Users size={15} />}
-          title="Public profile"
-          description="Let other people find your profile by username."
+          title={t('publicProfile')}
+          description={t('publicProfileDesc')}
           value={privacy.showProfileToFriends}
           onChange={(v) => update('showProfileToFriends', v)}
         />
         <Toggle
           icon={<Sparkles size={15} />}
-          title="Show listening activity"
-          description="Friends can see what you're playing right now. Off matches Apple Music's default."
+          title={t('listeningActivity')}
+          description={t('listeningActivityDesc')}
           value={privacy.showListeningActivity}
           onChange={(v) => update('showListeningActivity', v)}
         />
         <Toggle
           icon={<EyeOff size={15} />}
-          title="Show followed artists"
-          description="Hide your Following grid from your profile."
+          title={t('followedArtistsSetting')}
+          description={t('followedArtistsDesc')}
           value={privacy.showFollowingArtists}
           onChange={(v) => update('showFollowingArtists', v)}
         />
         <Toggle
           icon={<ListMusic size={15} />}
-          title="Show playlists"
-          description="Let friends browse your saved playlists."
+          title={t('showPlaylists')}
+          description={t('showPlaylistsDesc')}
           value={privacy.showPlaylists}
           onChange={(v) => update('showPlaylists', v)}
         />
@@ -165,10 +215,7 @@ export function Settings() {
           users who actually want EQ can open Advanced and find it. */}
       <AdvancedSection />
 
-      <div className="pt-2 text-[11.5px] text-cream/45">
-        Settings are stored locally on this device. They sync across Çatalify
-        windows but not to other computers.
-      </div>
+      <div className="pt-2 text-[11.5px] text-cream/45">{t('storedLocally')}</div>
     </div>
   )
 }
@@ -201,6 +248,51 @@ function Section({
       </div>
       <div className="space-y-2">{children}</div>
     </section>
+  )
+}
+
+/** Row with a segmented set of options instead of an on/off switch. */
+function ChoiceRow<V extends string>({
+  icon,
+  title,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  options: { value: V; label: string }[]
+  value: V
+  onChange: (next: V) => void
+}) {
+  return (
+    <div className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/[0.03] border border-white/[0.05]">
+      <div className="w-9 h-9 rounded-xl bg-white/[0.06] text-cream/85 flex items-center justify-center flex-shrink-0">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13.5px] font-semibold text-cream">{title}</div>
+        <div className="text-[11.5px] text-cream/55 mt-0.5">{description}</div>
+      </div>
+      <div className="flex items-center gap-1 rounded-xl bg-white/[0.05] p-1 flex-shrink-0">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className={clsx(
+              'px-3 py-1.5 rounded-lg text-[12px] font-semibold transition',
+              value === opt.value
+                ? 'accent-bg text-obsidian-950 shadow'
+                : 'text-cream/60 hover:text-cream hover:bg-white/[0.06]',
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -253,6 +345,7 @@ function Toggle({
  */
 function AdvancedSection() {
   const [open, setOpen] = useState(false)
+  const t = useT()
   return (
     <section className="pt-4 border-t border-white/[0.05]">
       <button
@@ -261,10 +354,8 @@ function AdvancedSection() {
         aria-expanded={open}
       >
         {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        <span className="text-[13.5px] font-semibold">Advanced</span>
-        <span className="text-[11.5px] text-cream/45">
-          Power-user options & external tools
-        </span>
+        <span className="text-[13.5px] font-semibold">{t('advanced')}</span>
+        <span className="text-[11.5px] text-cream/45">{t('advancedHint')}</span>
       </button>
       {open && (
         <div className="mt-5 space-y-4">

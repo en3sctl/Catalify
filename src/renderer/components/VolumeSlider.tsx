@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Volume1, Volume2, VolumeX } from 'lucide-react'
 import { clsx } from '../utils/format'
 
@@ -17,9 +17,15 @@ interface Props {
  * chrome. Click-to-set, drag, and scroll-wheel all adjust the value; the
  * speaker icon toggles mute. Pure presentational: `onChange` drives the
  * store's `setVolume`, which owns MusicKit + persistence.
+ *
+ * The visible track is 4px tall but the interactive surface is a 20px-tall
+ * strip around it — the thin bar was genuinely hard to grab. Dragging uses
+ * pointer capture so the thumb keeps following even when the cursor leaves
+ * the strip mid-drag.
  */
 export function VolumeSlider({ volume, onChange, width = 80, className }: Props) {
   const trackRef = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
   const muted = volume === 0
   const Icon = muted ? VolumeX : volume < 0.35 ? Volume1 : Volume2
   const pct = Math.max(0, Math.min(100, volume * 100))
@@ -27,20 +33,27 @@ export function VolumeSlider({ volume, onChange, width = 80, className }: Props)
   const lastNonZero = useRef(0.8)
   if (volume > 0) lastNonZero.current = volume
 
-  const handleDown = (e: React.MouseEvent) => {
+  const computeFromX = (clientX: number) => {
     const track = trackRef.current
-    if (!track) return
+    if (!track) return volume
     const rect = track.getBoundingClientRect()
-    const compute = (clientX: number) =>
-      Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-    onChange(compute(e.clientX))
-    const onMove = (ev: MouseEvent) => onChange(compute(ev.clientX))
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  }
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDragging(true)
+    onChange(computeFromX(e.clientX))
+  }
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragging) return
+    onChange(computeFromX(e.clientX))
+  }
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!dragging) return
+    setDragging(false)
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch {}
   }
 
   const onWheel = (e: React.WheelEvent) => {
@@ -68,9 +81,12 @@ export function VolumeSlider({ volume, onChange, width = 80, className }: Props)
       >
         <Icon size={16} />
       </button>
+      {/* Hit area: full-height touch strip; the visible 4px track sits centred inside it. */}
       <div
-        ref={trackRef}
-        onMouseDown={handleDown}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onWheel={onWheel}
         onKeyDown={onKeyDown}
         role="slider"
@@ -79,15 +95,26 @@ export function VolumeSlider({ volume, onChange, width = 80, className }: Props)
         aria-valuemax={100}
         aria-valuenow={Math.round(pct)}
         tabIndex={0}
-        className="relative h-1 bg-white/[0.10] rounded-full cursor-pointer outline-none"
+        className="relative h-5 flex items-center cursor-pointer outline-none touch-none select-none"
         style={{ width }}
       >
         <div
-          className="absolute inset-y-0 left-0 accent-gradient rounded-full"
-          style={{ width: `${pct}%` }}
-        />
+          ref={trackRef}
+          className={clsx(
+            'relative w-full bg-white/[0.10] rounded-full transition-[height] duration-150',
+            dragging ? 'h-[6px]' : 'h-1 group-hover/vol:h-[6px]',
+          )}
+        >
+          <div
+            className="absolute inset-y-0 left-0 accent-gradient rounded-full"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full accent-bg shadow-[0_0_10px_rgb(var(--accent)/0.6)] opacity-0 group-hover/vol:opacity-100 transition-opacity"
+          className={clsx(
+            'absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full accent-bg shadow-[0_0_10px_rgb(var(--accent)/0.6)] transition-opacity pointer-events-none',
+            dragging ? 'opacity-100' : 'opacity-0 group-hover/vol:opacity-100',
+          )}
           style={{ left: `calc(${pct}% - 6px)` }}
         />
       </div>

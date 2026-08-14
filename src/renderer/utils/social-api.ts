@@ -32,6 +32,8 @@ export interface SocialUser {
   hideLists?: boolean
   favoriteArtist?: FavoriteItem | null
   favoriteSong?: FavoriteItem | null
+  /** Displayed listening-badge ids (see utils/badges.ts). */
+  badges?: string[]
 }
 
 export const HANDLE_RE = /^[a-z0-9_]{2,20}$/
@@ -186,6 +188,7 @@ export async function updateProfile(patch: {
   hideLists?: boolean
   favoriteArtist?: FavoriteItem | null
   favoriteSong?: FavoriteItem | null
+  badges?: string[]
 }): Promise<SocialUser> {
   const d = await api('/me', { method: 'PATCH', body: JSON.stringify(patch) })
   await window.bombo.store.set('socialUser', d.user)
